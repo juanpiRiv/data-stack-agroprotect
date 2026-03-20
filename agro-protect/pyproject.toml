@@ -1,0 +1,30 @@
+[project]
+name = "agro-protect-data-stack"
+version = "1.0.0"
+description = "Extracción (Meltano) y transformación (dbt) para el data stack AgroProtect en BigQuery"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+extraction = [
+  "meltano[gcs]>=4.0.0",
+]
+transform = [
+  "dbt-core>=1.9.0",
+  "dbt-bigquery>=1.9.0",
+  "sqlfluff>=3.0.0",
+  "sqlfluff-templater-dbt>=3.0.0",
+]
+all = [
+  "agro-protect-data-stack[extraction,transform]",
+]
+dev = [
+  "agro-protect-data-stack[all]",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = []

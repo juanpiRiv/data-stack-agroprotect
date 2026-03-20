@@ -1,0 +1,12 @@
+version: 2
+
+sources:
+  - name: tap_github
+    description: GitHub repository data from tap-github
+    schema: "{{ target.name }}_tap_github"
+    tables:
+      - name: repositories
+      - name: commits
+      - name: releases
+      - name: branches
+      - name: pull_request_commits

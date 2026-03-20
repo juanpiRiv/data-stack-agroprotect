@@ -1,0 +1,42 @@
+default_environment: dev
+
+project_id: agro-protect
+
+plugins:
+  extractors:
+  - name: tap-github
+    variant: meltanolabs
+    pip_url: meltanolabs-tap-github
+    config:
+      auth_token: $TAP_GITHUB_AUTH_TOKEN
+      repositories:
+        - juanpiRiv/data-stack-agroprotect
+      stream_options:
+        milestones:
+          state: open
+    select:
+    - repositories.*
+    - branches.*
+    - commits.*
+    - pull_request_commits.*
+
+
+  loaders:
+  - name: target-jsonl
+    variant: andyh1203
+    pip_url: target-jsonl
+  - name: target-bigquery
+    variant: z3z1ma
+    pip_url: git+https://github.com/z3z1ma/target-bigquery.git
+    config:
+      project: ${TARGET_BIGQUERY_PROJECT}
+      dataset: ${MELTANO_ENVIRONMENT}_${MELTANO_EXTRACTOR_NAMESPACE}
+      location: ${TARGET_BIGQUERY_LOCATION}
+      credentials_path: ${TARGET_BIGQUERY_CREDENTIALS_PATH}
+      denormalized: false
+      generate_view: true
+
+environments:
+- name: dev
+- name: ci
+- name: prod
