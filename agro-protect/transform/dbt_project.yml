@@ -28,9 +28,6 @@ models:
     +persist_docs:
       relation: true
       columns: true
-    production:
-      marts:
-        +schema: marts
     staging:
       +schema: stg
       +materialized: view

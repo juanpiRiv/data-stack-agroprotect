@@ -4,7 +4,7 @@ Extraction with Meltano (**tap-agro** for agro weather) and modeling with dbt.
 
 ## How to navigate
 - Meltano creates raw tables in `<env>_<tap_namespace>`.
-- Current `stg_*` / marts may still reference legacy `tap_github` until fully migrated.
+- Raw NASA POWER: **`{env}_tap_agro`** (Meltano) and **`raw_nasa`** (source `tap_nasa` in `source_nasa.yml`).
 - Staging dataset `stg`; marts in `marts` (prod/ci) or `SANDBOX_<DBT_USER>` in dev.
 
 ## Running locally
@@ -23,8 +23,8 @@ BigQuery stack: Meltano for ingest, dbt for clean layers and documented marts.
 
 ## Read next
 - `README.md` and `extraction/README.md` for the extractor.
-- `models/staging/*.yml` for sources (legacy GitHub until full agro migration).
-- `models/production/marts/*.yml` for marts and tests.
+- `models/staging/source_tap_agro.yml`, `source_nasa.yml`, and `stg_*.yml` for sources.
+- Cuando agregues marts en `models/production/marts/`, configura `+schema: marts` en `dbt_project.yml` bajo `models.agroprotect.production.marts`.
 
 ## Team flow
 - `.env` aligned with GCP and the chosen tap.
