@@ -6,7 +6,13 @@ models:
       Cleaned and transformed daily NASA POWER climate data for agricultural risk assessment.
       Handles deduplication, variable renaming, derived metric calculation, and data quality flagging.
       Prepared for joining with tax and productivity data for multi-domain risk index.
-    refresh_interval_hr: 24
+
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - location_id
+              - date
 
     columns:
       # Location identifiers
@@ -14,10 +20,6 @@ models:
         description: Unique identifier for the location/weather station
         tests:
           - not_null
-          - unique_combination_of_columns:
-              combination_of_columns:
-                - location_id
-                - date
 
       - name: location_name
         description: Human-readable name of the location
