@@ -46,6 +46,16 @@ jobs:
           printf '%s' "${{ secrets.DBT_GOOGLE_APPLICATION_CREDENTIALS }}" | base64 -d > "${DBT_GOOGLE_APPLICATION_CREDENTIALS}"
           chmod 600 "${DBT_GOOGLE_APPLICATION_CREDENTIALS}"
 
+      - name: Check required secrets for dbt profile
+        run: |
+          if [ -z "${BIGQUERY_PROJECT_ID}" ] || [ -z "${BIGQUERY_LOCATION}" ]; then
+            echo "::error::Set repository secrets BIGQUERY_PROJECT_ID and BIGQUERY_LOCATION (required)."
+            exit 1
+          fi
+          if [ -z "${BIGQUERY_DATASET_ID}" ]; then
+            echo "::notice::BIGQUERY_DATASET_ID is empty; profiles.yml.example defaults schema to analytics (set the secret to your real dbt dataset id)."
+          fi
+
       - name: Prepare dbt profiles
         run: |
           cp agro-protect/transform/profiles.yml.example agro-protect/transform/profiles.yml
