@@ -62,6 +62,19 @@ def main() -> None:
     if not creds or not os.path.isfile(creds):
         raise SystemExit("GOOGLE_APPLICATION_CREDENTIALS must point to a service account JSON file.")
 
+    try:
+        raw = open(creds, encoding="utf-8").read().strip()
+        if not raw:
+            raise ValueError("empty file")
+        json.loads(raw)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as e:
+        raise SystemExit(
+            "GOOGLE_APPLICATION_CREDENTIALS file must contain valid service account JSON. "
+            "In GitHub Actions, set EXPORT_GOOGLE_APPLICATION_CREDENTIALS to base64(single line): "
+            "base64 -i key.json | tr -d '\\n'. "
+            f"({e})"
+        ) from e
+
     project = _project_id()
     client = bigquery.Client(project=project) if project else bigquery.Client()
 

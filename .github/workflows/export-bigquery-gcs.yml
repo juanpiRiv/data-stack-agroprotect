@@ -56,9 +56,21 @@ jobs:
           python -m pip install -r agro-protect/scripts/requirements-export.txt
 
       - name: Decode GCP credentials (export SA)
+        env:
+          EXPORT_SA_B64: ${{ secrets.EXPORT_GOOGLE_APPLICATION_CREDENTIALS }}
         run: |
-          printf '%s' "${{ secrets.EXPORT_GOOGLE_APPLICATION_CREDENTIALS }}" | base64 -d > "${GOOGLE_APPLICATION_CREDENTIALS}"
+          set -euo pipefail
+          if [ -z "${EXPORT_SA_B64}" ]; then
+            echo "::error::Secret EXPORT_GOOGLE_APPLICATION_CREDENTIALS is missing or empty. Repo Settings → Secrets → Actions: add the service account JSON as a single-line base64 string (see agro-protect/scripts/README.md)."
+            exit 1
+          fi
+          printf '%s' "${EXPORT_SA_B64}" | base64 -d > "${GOOGLE_APPLICATION_CREDENTIALS}"
           chmod 600 "${GOOGLE_APPLICATION_CREDENTIALS}"
+          if [ ! -s "${GOOGLE_APPLICATION_CREDENTIALS}" ]; then
+            echo "::error::Decoded credentials file is empty. Use base64 of the raw JSON key, not the JSON pasted directly: base64 -i key.json | tr -d '\n'"
+            exit 1
+          fi
+          python3 -c "import json, pathlib, sys; p=pathlib.Path(sys.argv[1]); json.loads(p.read_text())" "${GOOGLE_APPLICATION_CREDENTIALS}"
 
       - name: Export to GCS
         working-directory: agro-protect
