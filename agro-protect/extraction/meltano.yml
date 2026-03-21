@@ -33,8 +33,8 @@ plugins:
       # Tras 429 diario Open-Meteo: NASA solo (false/true). Para “ayer” diario + frescura: Open-Meteo solo o ambas.
       use_open_meteo: false
       use_nasa_power: true
-      # Entre llamadas (tap suele aplicar a la fuente activa; NASA suele aceptar menos delay).
-      request_delay_seconds: 3
+      # NASA: 1s suele ir bien; si ves errores/throttle, subí a 2–3. Open-Meteo necesita más.
+      request_delay_seconds: 1
     select:
     - locations.*
     - clima_diario_nasa_power.*
@@ -61,11 +61,11 @@ plugins:
 environments:
 - name: dev
 - name: ci
-# prod: podés subir delay si la API activa lo pide (Open-Meteo); NASA suele ir bien con el default del YAML.
+# prod: subí delay si cambiás a Open-Meteo o NASA se queja.
 - name: prod
   config:
     plugins:
       extractors:
       - name: tap-agro
         config:
-          request_delay_seconds: 3
+          request_delay_seconds: 1

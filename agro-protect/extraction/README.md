@@ -157,7 +157,7 @@ La API pública tiene **tope por minuto** y **por hora**. Con ~110 localidades y
 
 **Qué hacer (histórico / muchas localidades):**
 
-1. Usá **`./scripts/run_tap_agro_bq_yearly.sh`** (un año por corrida). Con **NASA**, el default suele ser **`request_delay_seconds: 3`**. Con **Open-Meteo**, usá **8–12**; si ves **429** diario/minuto, pausá hasta el día siguiente o pasá temporalmente a NASA.
+1. Usá **`./scripts/run_tap_agro_bq_yearly.sh`** (un año por corrida). Con **NASA**, el default en `meltano.yml` es **`request_delay_seconds: 1`** (subí a 2–3 si la API falla). Con **Open-Meteo**, usá **8–12**; si ves **429** diario/minuto, pausá o pasá a NASA.
 2. Entre años, enfriá la cuota horaria:  
    `PAUSE_BETWEEN_YEARS_SEC=300 ./scripts/run_tap_agro_bq_yearly.sh`  
    o dejá pasar **~1 h** y volvé a correr el mismo año si falló al final.
