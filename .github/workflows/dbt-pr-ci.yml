@@ -18,8 +18,8 @@ jobs:
       BIGQUERY_LOCATION: ${{ secrets.BIGQUERY_LOCATION }}
       DBT_GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-dbt-service-account.json
       GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-dbt-service-account.json
-      # Meltano schedule loads prod_tap_agro; dev target alone would look for dev_tap_agro (empty / missing).
-      DBT_TAP_AGRO_DATASET: prod_tap_agro
+      # Raw tap-agro dataset (same name Meltano uses: {env}_tap_agro). Override with repo variable DBT_TAP_AGRO_DATASET.
+      DBT_TAP_AGRO_DATASET: ${{ vars.DBT_TAP_AGRO_DATASET || 'prod_tap_agro' }}
       # Set true when raw_nasa.clima_diario_nasa_power_view exists in BigQuery.
       DBT_ENABLE_RAW_NASA: 'false'
       DBT_USER: ci_pr_${{ github.event.pull_request.number }}
@@ -138,6 +138,11 @@ jobs:
             echo "No manifest found; dbt will run a full build."
             rm -f agro-protect/transform/prod-artifacts/manifest.json
           fi
+
+      - name: Ensure tap-agro raw dataset and stub tables (dbt sources)
+        run: |
+          chmod +x agro-protect/transform/ci/ensure_tap_agro_raw_for_dbt.sh
+          agro-protect/transform/ci/ensure_tap_agro_raw_for_dbt.sh
 
       - name: Run dbt build in sandbox
         working-directory: agro-protect/transform
