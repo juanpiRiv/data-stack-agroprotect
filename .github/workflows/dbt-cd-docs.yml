@@ -93,6 +93,21 @@ jobs:
           printf '%s' "${{ secrets.DBT_GOOGLE_APPLICATION_CREDENTIALS }}" | base64 -d > "${DBT_GOOGLE_APPLICATION_CREDENTIALS}"
           chmod 600 "${DBT_GOOGLE_APPLICATION_CREDENTIALS}"
 
+      # Secret vacío o solo espacios deja BIGQUERY_PROJECT_ID ""; dbt y setup-gcloud fallan o se comportan mal.
+      - name: Normalize BIGQUERY_PROJECT_ID
+        run: |
+          set -euo pipefail
+          BQP="$(printf '%s' "${BIGQUERY_PROJECT_ID:-}" | xargs)"
+          if [ -z "${BQP}" ]; then
+            BQP="$(jq -r '.project_id // empty' "${GOOGLE_APPLICATION_CREDENTIALS}" | xargs)"
+          fi
+          if [ -z "${BQP}" ]; then
+            BQP="agro-protect-490822"
+          fi
+          echo "BIGQUERY_PROJECT_ID=${BQP}" >> "${GITHUB_ENV}"
+          echo "GOOGLE_CLOUD_PROJECT=${BQP}" >> "${GITHUB_ENV}"
+          echo "GOOGLE_CLOUD_QUOTA_PROJECT=${BQP}" >> "${GITHUB_ENV}"
+
       - name: Prepare dbt profiles
         run: |
           cp agro-protect/transform/profiles.yml.example agro-protect/transform/profiles.yml
@@ -112,6 +127,17 @@ jobs:
           DBT_PROFILES_DIR: ${{ github.workspace }}/agro-protect/transform
         run: |
           dbt docs generate --target prod
+
+      - name: Verify dbt manifest for Pages and slim CI
+        working-directory: agro-protect/transform
+        run: |
+          set -euo pipefail
+          M="target/manifest.json"
+          if [ ! -s "${M}" ]; then
+            echo "::error::${M} missing or empty after dbt docs generate."
+            exit 1
+          fi
+          jq -e '.metadata' "${M}" >/dev/null
 
       - name: Set up gcloud (subir manifest a GCS)
         if: ${{ secrets.DBT_MANIFEST_GCS_URI != '' }}
