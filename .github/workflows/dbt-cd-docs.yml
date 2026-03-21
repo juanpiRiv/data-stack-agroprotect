@@ -110,6 +110,30 @@ jobs:
           echo "GOOGLE_CLOUD_PROJECT=${BQP}" >> "${GITHUB_ENV}"
           echo "GOOGLE_CLOUD_QUOTA_PROJECT=${BQP}" >> "${GITHUB_ENV}"
 
+      # Igual que export-bigquery-gcs: secret ≠ proyecto de la key → dbt falla con "Not found: Project".
+      - name: Set up gcloud (verificar proyecto BigQuery)
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Authenticate gcloud and align BIGQUERY_PROJECT_ID
+        run: |
+          set -euo pipefail
+          gcloud auth activate-service-account --key-file="${GOOGLE_APPLICATION_CREDENTIALS}"
+          BQP="$(printf '%s' "${BIGQUERY_PROJECT_ID}" | xargs)"
+          KEY_PID="$(jq -r '.project_id // empty' "${GOOGLE_APPLICATION_CREDENTIALS}" | xargs)"
+          if bq ls --project_id="${BQP}" "${BQP}:" >/dev/null 2>&1; then
+            echo "::notice::BIGQUERY_PROJECT_ID=${BQP} OK (bq ls)."
+          elif [ -n "${KEY_PID}" ] && bq ls --project_id="${KEY_PID}" "${KEY_PID}:" >/dev/null 2>&1; then
+            echo "::warning::BIGQUERY_PROJECT_ID (${BQP}) no accesible con esta SA; usando project_id del JSON (${KEY_PID})."
+            BQP="${KEY_PID}"
+            echo "BIGQUERY_PROJECT_ID=${BQP}" >> "${GITHUB_ENV}"
+            echo "GOOGLE_CLOUD_PROJECT=${BQP}" >> "${GITHUB_ENV}"
+            echo "GOOGLE_CLOUD_QUOTA_PROJECT=${BQP}" >> "${GITHUB_ENV}"
+          else
+            echo "::error::La SA de dbt no puede ejecutar bq ls en BIGQUERY_PROJECT_ID ni en project_id de la key. Revisá IAM (BigQuery) y que el secret sea el **ID** de proyecto GCP (Configuración → ID del proyecto), no el nombre."
+            exit 1
+          fi
+          gcloud config set project "${BQP}" --quiet
+
       - name: Prepare dbt profiles
         run: |
           cp agro-protect/transform/profiles.yml.example agro-protect/transform/profiles.yml
@@ -140,18 +164,6 @@ jobs:
             exit 1
           fi
           jq -e '.metadata' "${M}" >/dev/null
-
-      - name: Set up gcloud (subir manifest a GCS)
-        if: env.DBT_MANIFEST_GCS_URI != ''
-        uses: google-github-actions/setup-gcloud@v2
-        with:
-          project_id: ${{ env.BIGQUERY_PROJECT_ID }}
-
-      - name: Authenticate gcloud (manifest → GCS)
-        if: env.DBT_MANIFEST_GCS_URI != ''
-        run: |
-          gcloud auth activate-service-account --key-file="${GOOGLE_APPLICATION_CREDENTIALS}"
-          gcloud config set project "${BIGQUERY_PROJECT_ID}" --quiet
 
       - name: Upload dbt manifest to GCS (slim CI en PRs)
         if: env.DBT_MANIFEST_GCS_URI != ''
