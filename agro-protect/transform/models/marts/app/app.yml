@@ -1,0 +1,68 @@
+version: 2
+
+models:
+  - name: app_location_snapshot
+    description: >
+      Frontend-friendly location snapshot that resolves the latest usable weather row per
+      location and preserves map-ready metadata for AgroProtect applications.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - location_id
+    columns:
+      - name: location_id
+        description: Stable location identifier used by the frontend map and detail panels.
+        tests:
+          - not_null
+          - unique
+          - relationships:
+              arguments:
+                to: ref('dim_location')
+                field: location_id
+      - name: snapshot_date
+        description: Weather date selected for the latest location snapshot.
+        tests:
+          - not_null
+      - name: province_key
+        description: Canonical province join key.
+        tests:
+          - not_null
+      - name: selection_strategy
+        description: Indicates whether the snapshot used a usable row or a fallback row.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['usable', 'fallback']
+      - name: climate_rain_signal
+        description: Normalized rainfall signal for app-facing climate scoring (0-100).
+        tests:
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: 'between 0 and 100'
+              config:
+                where: 'climate_rain_signal is not null'
+      - name: climate_water_stress_signal
+        description: Normalized water stress signal for app-facing climate scoring (0-100).
+        tests:
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: 'between 0 and 100'
+              config:
+                where: 'climate_water_stress_signal is not null'
+      - name: climate_temperature_signal
+        description: Normalized temperature stress signal for app-facing climate scoring (0-100).
+        tests:
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: 'between 0 and 100'
+              config:
+                where: 'climate_temperature_signal is not null'
+      - name: climate_index_total
+        description: Aggregate climate score for the selected snapshot row (0-1).
+        tests:
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: 'between 0 and 1'
+              config:
+                where: 'climate_index_total is not null'
