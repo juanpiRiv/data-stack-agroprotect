@@ -42,15 +42,15 @@ climate_aggregated AS (
         SUM(cd.precipitation_corrected) AS total_precipitation_90d,
         AVG(cd.relative_humidity_2m) AS avg_humidity,
         SUM(CASE WHEN cd.frost_risk = 1 THEN 1 ELSE 0 END)
-            / COUNT(*) * 100 AS frost_risk_pct,
+        / COUNT(*) * 100 AS frost_risk_pct,
         SUM(CASE WHEN cd.heat_stress_risk = 1 THEN 1 ELSE 0 END)
-            / COUNT(*) * 100 AS heat_stress_risk_pct,
+        / COUNT(*) * 100 AS heat_stress_risk_pct,
         SUM(CASE WHEN cd.drought_stress_risk = 1 THEN 1 ELSE 0 END)
-            / COUNT(*) * 100 AS drought_stress_risk_pct,
+        / COUNT(*) * 100 AS drought_stress_risk_pct,
         SUM(CASE WHEN cd.fungal_disease_risk = 1 THEN 1 ELSE 0 END)
-            / COUNT(*) * 100 AS fungal_disease_risk_pct,
+        / COUNT(*) * 100 AS fungal_disease_risk_pct,
         SUM(CASE WHEN cd.excessive_moisture_risk = 1 THEN 1 ELSE 0 END)
-            / COUNT(*) * 100 AS excess_moisture_risk_pct
+        / COUNT(*) * 100 AS excess_moisture_risk_pct
     FROM climate_data AS cd
     WHERE cd.critical_null_count < 2
     GROUP BY
@@ -144,6 +144,13 @@ joined_data AS (
         ca.drought_stress_risk_pct,
         ca.fungal_disease_risk_pct,
         ca.excess_moisture_risk_pct,
+        pr.avg_yield,
+        pr.yield_risk_score,
+        pr.harvest_efficiency_risk_score,
+        tr.inmobiliario_rural_usd_ha,
+        tr.iibb_agro_pct,
+        tr.property_tax_risk_score,
+        tr.income_tax_risk_score,
         (
             ca.frost_risk_pct * 0.25
             + ca.heat_stress_risk_pct * 0.25
@@ -151,9 +158,6 @@ joined_data AS (
             + ca.fungal_disease_risk_pct * 0.15
             + ca.excess_moisture_risk_pct * 0.15
         ) AS climate_risk_score,
-        pr.avg_yield,
-        pr.yield_risk_score,
-        pr.harvest_efficiency_risk_score,
         COALESCE(
             (
                 pr.yield_risk_score * 0.6
@@ -161,10 +165,6 @@ joined_data AS (
             ),
             0
         ) AS productivity_risk_score,
-        tr.inmobiliario_rural_usd_ha,
-        tr.iibb_agro_pct,
-        tr.property_tax_risk_score,
-        tr.income_tax_risk_score,
         COALESCE(
             (
                 COALESCE(tr.property_tax_risk_score, 0) * 0.5
