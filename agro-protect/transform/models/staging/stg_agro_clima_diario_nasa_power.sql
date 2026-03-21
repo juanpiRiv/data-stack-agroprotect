@@ -3,7 +3,7 @@
     tags=['agro', 'tap_agro']
 ) }}
 
--- Aplana el registro Singer (`data` STRUCT). Primary key lógica del tap: location_id + date.
+-- Flattens the Singer record (`data` STRUCT). Tap logical primary key: location_id + date.
 SELECT
     * EXCEPT (data),
     data.*

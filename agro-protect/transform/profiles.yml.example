@@ -1,3 +1,4 @@
+# BigQuery: dbt `schema` is the BigQuery dataset name (dbt-bigquery 1.9+).
 agroprotect:
 
   outputs:
@@ -5,7 +6,7 @@ agroprotect:
       type: bigquery
       method: service-account
       project: "{{ env_var('BIGQUERY_PROJECT_ID') }}"
-      dataset: "{{ env_var('BIGQUERY_DATASET_ID') }}"
+      schema: "{{ env_var('BIGQUERY_DATASET_ID') }}"
       location: "{{ env_var('BIGQUERY_LOCATION') }}"
       keyfile: "{{ env_var('DBT_GOOGLE_APPLICATION_CREDENTIALS') }}"
       threads: 4
@@ -14,7 +15,7 @@ agroprotect:
       type: bigquery
       method: service-account
       project: "{{ env_var('BIGQUERY_PROJECT_ID') }}"
-      dataset: "{{ env_var('BIGQUERY_DATASET_ID') }}_ci"
+      schema: "{{ env_var('BIGQUERY_DATASET_ID') }}_ci"
       location: "{{ env_var('BIGQUERY_LOCATION') }}"
       keyfile: "{{ env_var('DBT_GOOGLE_APPLICATION_CREDENTIALS') }}"
       threads: 4
@@ -23,7 +24,7 @@ agroprotect:
       type: bigquery
       method: service-account
       project: "{{ env_var('BIGQUERY_PROJECT_ID') }}"
-      dataset: "{{ env_var('BIGQUERY_DATASET_ID') }}"
+      schema: "{{ env_var('BIGQUERY_DATASET_ID') }}"
       location: "{{ env_var('BIGQUERY_LOCATION') }}"
       keyfile: "{{ env_var('DBT_GOOGLE_APPLICATION_CREDENTIALS') }}"
       threads: 4

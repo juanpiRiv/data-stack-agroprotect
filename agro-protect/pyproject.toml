@@ -1,7 +1,7 @@
 [project]
 name = "agro-protect-data-stack"
 version = "1.0.0"
-description = "Extracción (Meltano) y transformación (dbt) para el data stack AgroProtect en BigQuery"
+description = "Meltano extraction and dbt transformation for the AgroProtect data stack on BigQuery"
 requires-python = ">=3.11"
 dependencies = []
 

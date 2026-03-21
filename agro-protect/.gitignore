@@ -13,13 +13,13 @@ dist/
 build/
 *.log
 
-# Meltano / extracción
+# Meltano / extraction
 extraction/.env
 extraction/.meltano/
 extraction/venv/
 extraction/output/
 extraction/plugins/
-# Artefactos locales de credenciales (usar .env + path absoluto)
+# Local credential artifacts (use .env + absolute paths)
 extraction/*service-account*.json
 extraction/gcp-*.json
 

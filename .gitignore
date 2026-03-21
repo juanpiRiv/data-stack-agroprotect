@@ -1,10 +1,10 @@
-# Raíz del monorepo (data-stack-agroprotect)
+# Monorepo root (data-stack-agroprotect)
 .DS_Store
 .cursor/
 .idea/
 *.code-workspace
 
-# Credenciales sueltas en la raíz (el proyecto usa agro-protect/.env, ignorado allí)
+# Stray credentials at repo root (project uses agro-protect/.env, ignored there)
 .env
 .env.local
 *.pem

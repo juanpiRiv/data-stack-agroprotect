@@ -37,8 +37,8 @@ author_email_mode AS (
 ),
 
 /*
-  Elegimos valores representativos del perfil (login, avatar, etc.)
-  usando el commit más reciente por autor (evita ANY_VALUE arbitrario).
+  Pick representative profile fields (login, avatar, etc.)
+  from each author's most recent commit (avoids arbitrary ANY_VALUE).
 */
 author_profile_latest AS (
     SELECT
@@ -73,25 +73,25 @@ committer_base_stats AS (
     SELECT
         c.github_author_id,
 
-        -- Perfil (del commit más reciente)
+        -- Profile (from most recent commit)
         p.github_author_login,
         p.github_author_avatar_url,
         p.github_author_profile_url,
         p.github_author_type,
         p.git_author_name,
 
-        -- Email principal (mode)
+        -- Primary email (mode)
         aem.git_author_email,
 
-        -- Site admin (por si varía)
+        -- Site admin (if it varies across commits)
         MAX(COALESCE(c.github_author_is_site_admin, FALSE)) AS is_site_admin,
 
-        -- Conteos base
+        -- Base counts
         COUNT(*) AS total_commits,
         COUNT(DISTINCT c.repo) AS repos_contributed_to,
         COUNT(DISTINCT c.commit_date) AS active_days,
 
-        -- Actividad temporal
+        -- Time activity
         MIN(c.commit_timestamp) AS first_commit_at,
         MAX(c.commit_timestamp) AS last_commit_at,
         DIV(
@@ -99,7 +99,7 @@ committer_base_stats AS (
             86400
         ) AS days_active_span,
 
-        -- Breakdown por tipo
+        -- Breakdown by type
         COUNTIF(c.commit_type = 'fix') AS fix_commits,
         COUNTIF(c.commit_type = 'feature') AS feature_commits,
         COUNTIF(c.commit_type = 'docs') AS docs_commits,
@@ -109,7 +109,7 @@ committer_base_stats AS (
         COUNTIF(c.commit_type = 'performance') AS performance_commits,
         COUNTIF(c.commit_type = 'other') AS other_commits,
 
-        -- Verificación (null-safe)
+        -- Verification (null-safe)
         COUNTIF(COALESCE(c.is_verified, FALSE)) AS verified_commits,
         COUNTIF(NOT COALESCE(c.is_verified, FALSE)) AS unverified_commits,
 
@@ -177,7 +177,7 @@ time_pattern_counts AS (
     SELECT
         github_author_id,
 
-        -- BigQuery: 1=Sunday, 7=Saturday (como ya venís usando)
+        -- BigQuery: 1=Sunday, 7=Saturday (same convention as elsewhere)
         COUNTIF(commit_day_of_week IN (1, 7)) AS weekend_commits,
         COUNTIF(commit_day_of_week BETWEEN 2 AND 6) AS weekday_commits,
 
