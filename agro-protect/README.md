@@ -13,7 +13,7 @@ This repository implements the **AgroProtect** data stack on BigQuery: **Meltano
 | 1 | **Meltano service account** JSON as base64 (single line): `MELTANO_GOOGLE_APPLICATION_CREDENTIALS`. |
 | 2 | **BigQuery:** `BIGQUERY_PROJECT_ID`, `BIGQUERY_LOCATION`; optional `TARGET_BIGQUERY_*` overrides. SA needs at least **BigQuery Job User** + rights to load into `{env}_tap_agro`. |
 | 3 | **GCS state:** `MELTANO_STATE_BACKEND_URI=gs://bucket/prefix` on a bucket with billing; SA needs object read/write on that prefix. |
-| 4 | **Workflow:** [`.github/workflows/data-pipeline.yml`](../.github/workflows/data-pipeline.yml) — daily cron + `workflow_dispatch`. |
+| 4 | **Workflow:** [`.github/workflows/data-pipeline.yml`](../.github/workflows/data-pipeline.yml) — daily cron **06:00** `America/Argentina/Buenos_Aires` (09:00 UTC) + `workflow_dispatch`. |
 | 5 | **Local:** run [`extraction/scripts/setup-local.sh`](extraction/scripts/setup-local.sh) once; it prints a **step-by-step** (venv + `meltano run …`). Optional: [`run_prod_elt.sh`](extraction/scripts/run_prod_elt.sh) as a shortcut. |
 
 Long backfill is **not** in Actions — run [`extraction/scripts/run_tap_agro_bq_yearly.sh`](extraction/scripts/run_tap_agro_bq_yearly.sh) locally; see [`extraction/README.md`](extraction/README.md).
