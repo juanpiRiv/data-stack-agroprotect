@@ -3,7 +3,8 @@ version: 2
 sources:
   - name: tap_nasa
     description: NASA POWER climate data for agricultural analysis
-    schema: raw_nasa  # Update to match your actual schema name
+    # Por defecto mismo dataset que tap_agro (`prod_tap_agro` en target prod). Override con DBT_RAW_NASA_DATASET si usás otro id.
+    schema: "{% set _ds = env_var('DBT_RAW_NASA_DATASET', '') | trim %}{{ _ds if _ds else (target.name ~ '_tap_agro') }}"
     tables:
       - name: clima_diario_nasa_power_view
         description: >
