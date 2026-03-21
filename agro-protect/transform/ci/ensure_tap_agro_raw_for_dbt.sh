@@ -48,16 +48,43 @@ export GOOGLE_CLOUD_QUOTA_PROJECT="${PROJECT}"
 
 echo "Ensuring BigQuery dataset ${PROJECT}.${DS} (location=${LOC}) for dbt sources…"
 
-# Preflight: distingue ID incorrecto / sin IAM (BigQuery suele responder "not found").
-if ! bq ls --project_id="${PROJECT}" "${PROJECT}:" >/dev/null 2>&1; then
-  KEY_HINT=""
+bq_can_list_project() {
+  local p="$1"
+  [ -n "${p}" ] && bq ls --project_id="${p}" "${p}:" >/dev/null 2>&1
+}
+
+# Preflight: si el ID configurado no es accesible pero el project_id del JSON de la SA sí, alineamos (CI suele tener secret ≠ proyecto de la key).
+if ! bq_can_list_project "${PROJECT}"; then
+  KEY_PID=""
+  KEY_EMAIL=""
   if [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ] && [ -f "${GOOGLE_APPLICATION_CREDENTIALS}" ] && command -v jq >/dev/null 2>&1; then
-    KP="$(jq -r '.project_id // empty' "${GOOGLE_APPLICATION_CREDENTIALS}")"
-    KE="$(jq -r '.client_email // empty' "${GOOGLE_APPLICATION_CREDENTIALS}")"
-    KEY_HINT=" Clave: SA ${KE}; project_id en JSON=${KP}."
+    KEY_PID="$(trim "$(jq -r '.project_id // empty' "${GOOGLE_APPLICATION_CREDENTIALS}")")"
+    KEY_EMAIL="$(trim "$(jq -r '.client_email // empty' "${GOOGLE_APPLICATION_CREDENTIALS}")")"
   fi
-  echo "::error::BigQuery no accede al proyecto '${PROJECT}' (inexistente, mal escrito o la SA sin permisos).${KEY_HINT} Verificá el secret BIGQUERY_PROJECT_ID (ID del proyecto en GCP Console → Configuración) y roles BigQuery para esa SA en ese proyecto."
-  exit 2
+
+  if [ -n "${KEY_PID}" ] && [ "${KEY_PID}" != "${PROJECT}" ] && bq_can_list_project "${KEY_PID}"; then
+    echo "::warning::El proyecto '${PROJECT}' no es accesible con esta SA; usando el project_id de la clave JSON ('${KEY_PID}'). Corregí el secret BIGQUERY_PROJECT_ID o concedé a ${KEY_EMAIL} roles BigQuery en '${PROJECT}' si los datos deben vivir ahí."
+    PROJECT="${KEY_PID}"
+    export CLOUDSDK_CORE_PROJECT="${PROJECT}"
+    export GOOGLE_CLOUD_PROJECT="${PROJECT}"
+    export GOOGLE_CLOUD_QUOTA_PROJECT="${PROJECT}"
+    # Pasos siguientes del job (dbt) leen el mismo proyecto.
+    if [ -n "${GITHUB_ENV:-}" ]; then
+      {
+        echo "BIGQUERY_PROJECT_ID=${PROJECT}"
+        echo "DBT_TAP_RESOLVED_PROJECT=${PROJECT}"
+      } >> "${GITHUB_ENV}"
+    fi
+    echo "Ensuring BigQuery dataset ${PROJECT}.${DS} (location=${LOC}) for dbt sources… (proyecto = clave JSON)"
+  elif [ -n "${KEY_PID}" ] && [ "${KEY_PID}" = "${PROJECT}" ]; then
+    echo "::error::BigQuery no accede al proyecto '${PROJECT}' pero la SA pertenece a ese mismo proyecto: en GCP → IAM del proyecto '${PROJECT}' añadí a ${KEY_EMAIL} los roles **BigQuery Data Editor** (o Admin) y **BigQuery Job User**."
+    exit 2
+  else
+    KEY_HINT=""
+    [ -n "${KEY_EMAIL}" ] && KEY_HINT=" SA: ${KEY_EMAIL}; project_id en JSON=${KEY_PID:-vacío}."
+    echo "::error::BigQuery no accede a '${PROJECT}'.${KEY_HINT} Ajustá BIGQUERY_PROJECT_ID al ID real (Console → Configuración del proyecto) o concedé a la SA permisos BigQuery en ese proyecto."
+    exit 2
+  fi
 fi
 
 if ! bq show --format=none --project_id="${PROJECT}" "${PROJECT}:${DS}" >/dev/null 2>&1; then

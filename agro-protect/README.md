@@ -106,7 +106,7 @@ cp .env.example .env
 Edit `.env` with your credentials. Minimal example:
 
 ```bash
-BIGQUERY_PROJECT_ID=your-gcp-project
+BIGQUERY_PROJECT_ID=agro-protect-490822
 BIGQUERY_DATASET_ID=analytics
 BIGQUERY_LOCATION=US
 DBT_GOOGLE_APPLICATION_CREDENTIALS=/path/to/dbt-service-account.json

@@ -74,12 +74,12 @@ jobs:
         working-directory: agro-protect/extraction
         env:
           TAP_AGRO_USE_OPEN_METEO: 'false'
-          BIGQUERY_PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID }}
+          BIGQUERY_PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID || 'agro-protect-490822' }}
           BIGQUERY_LOCATION: ${{ secrets.BIGQUERY_LOCATION }}
           MELTANO_GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-meltano-service-account.json
           GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-meltano-service-account.json
           MELTANO_STATE_BACKEND_URI: ${{ secrets.MELTANO_STATE_BACKEND_URI }}
-          TARGET_BIGQUERY_PROJECT: ${{ secrets.TARGET_BIGQUERY_PROJECT || secrets.BIGQUERY_PROJECT_ID }}
+          TARGET_BIGQUERY_PROJECT: ${{ secrets.TARGET_BIGQUERY_PROJECT || secrets.BIGQUERY_PROJECT_ID || 'agro-protect-490822' }}
           TARGET_BIGQUERY_LOCATION: ${{ secrets.TARGET_BIGQUERY_LOCATION || secrets.BIGQUERY_LOCATION }}
           TARGET_BIGQUERY_CREDENTIALS_PATH: ${{ github.workspace }}/gcp-meltano-service-account.json
         run: |

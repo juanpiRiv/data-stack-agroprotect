@@ -13,7 +13,7 @@ jobs:
     permissions:
       contents: read
     env:
-      BIGQUERY_PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID }}
+      BIGQUERY_PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID || 'agro-protect-490822' }}
       BIGQUERY_DATASET_ID: ${{ secrets.BIGQUERY_DATASET_ID }}
       BIGQUERY_LOCATION: ${{ secrets.BIGQUERY_LOCATION }}
       DBT_GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-dbt-service-account.json
@@ -61,14 +61,30 @@ jobs:
             echo "::error::Set repository secrets BIGQUERY_PROJECT_ID and BIGQUERY_LOCATION (required, sin espacios/saltos extra)."
             exit 1
           fi
+          # Project ID de GCP: 6-30 chars, minúsculas/dígitos/guiones, empieza con letra (no uses el nombre visible ni el número de proyecto).
+          if ! printf '%s' "${BQP}" | grep -qE '^[a-z][a-z0-9-]{4,28}[a-z0-9]$'; then
+            echo "::error::BIGQUERY_PROJECT_ID no parece un ID válido de proyecto GCP (ej. mi-proyecto-123). En Console: Configuración del proyecto → copiar **ID del proyecto**, no el nombre."
+            exit 1
+          fi
+          if [ -f "${DBT_GOOGLE_APPLICATION_CREDENTIALS}" ] && command -v jq >/dev/null 2>&1; then
+            KEY_PID="$(jq -r '.project_id // empty' "${DBT_GOOGLE_APPLICATION_CREDENTIALS}")"
+            KEY_SA="$(jq -r '.client_email // empty' "${DBT_GOOGLE_APPLICATION_CREDENTIALS}")"
+            echo "::notice::dbt SA (key JSON): ${KEY_SA} | project_id en la key: ${KEY_PID}"
+            if [ -n "${KEY_PID}" ] && [ "${KEY_PID}" != "${BQP}" ]; then
+              echo "::notice::BIGQUERY_PROJECT_ID (${BQP}) ≠ project_id de la key. OK si la SA tiene IAM en ${BQP}; si falla con 'project not found', concedé BigQuery en ese proyecto o corregí el secret."
+            fi
+          fi
           echo "BIGQUERY_PROJECT_ID=${BQP}" >> "${GITHUB_ENV}"
           echo "BIGQUERY_LOCATION=${BQL}" >> "${GITHUB_ENV}"
+          # Proyecto donde viven las tablas raw del tap (igual que source_tap_agro.yml). Evita bq/dbt con projectId vacío.
+          TAP_PROJ="$(printf '%s' "${DBT_TAP_AGRO_PROJECT:-}" | xargs)"
+          TAP_PROJ="${TAP_PROJ:-${BQP}}"
+          echo "DBT_TAP_RESOLVED_PROJECT=${TAP_PROJ}" >> "${GITHUB_ENV}"
           if [ -z "${BIGQUERY_DATASET_ID}" ]; then
             echo "::notice::BIGQUERY_DATASET_ID is empty; profiles.yml.example defaults schema to analytics (set the secret to your real dbt dataset id)."
           fi
           # Debe coincidir con el ID del proyecto en la consola de GCP (ej. agro-protect-490822).
-          TAP_PROJ="${DBT_TAP_AGRO_PROJECT:-${BIGQUERY_PROJECT_ID}}"
-          echo "::notice::Fuentes tap_agro → proyecto ${TAP_PROJ} (secret BIGQUERY_PROJECT_ID; opcional DBT_TAP_AGRO_PROJECT si Meltano usa otro proyecto)."
+          echo "::notice::Fuentes tap_agro → proyecto ${TAP_PROJ} (BIGQUERY_PROJECT_ID; opcional secret DBT_TAP_AGRO_PROJECT si Meltano usa otro proyecto)."
 
       - name: Prepare dbt profiles
         run: |
@@ -112,8 +128,8 @@ jobs:
       - name: Set up gcloud (manifest from GCS)
         uses: google-github-actions/setup-gcloud@v2
         with:
-          # Usar env ya trimeado (paso "Check required secrets" escribe GITHUB_ENV).
-          project_id: ${{ env.BIGQUERY_PROJECT_ID }}
+          # Mismo proyecto que stub tap-agro / perfil (GITHUB_ENV tras "Check required secrets").
+          project_id: ${{ env.DBT_TAP_RESOLVED_PROJECT || env.BIGQUERY_PROJECT_ID }}
 
       - name: Download production manifest
         env:
@@ -160,7 +176,8 @@ jobs:
       - name: Align BIGQUERY_LOCATION with tap-agro dataset region
         run: |
           set -euo pipefail
-          DS_INFO=$(bq show --format=json "${BIGQUERY_PROJECT_ID}:${DBT_TAP_AGRO_DATASET}" 2>/dev/null || true)
+          TAP_PROJ="${DBT_TAP_RESOLVED_PROJECT:-${BIGQUERY_PROJECT_ID}}"
+          DS_INFO=$(bq show --format=json "${TAP_PROJ}:${DBT_TAP_AGRO_DATASET}" 2>/dev/null || true)
           if [ -z "${DS_INFO}" ]; then
             echo "No se pudo describir el dataset ${DBT_TAP_AGRO_DATASET}; se usa BIGQUERY_LOCATION del secret."
             exit 0
@@ -191,7 +208,7 @@ jobs:
     permissions:
       contents: read
     env:
-      BIGQUERY_PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID }}
+      BIGQUERY_PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID || 'agro-protect-490822' }}
       BIGQUERY_DATASET_ID: ${{ secrets.BIGQUERY_DATASET_ID }}
       BIGQUERY_LOCATION: ${{ secrets.BIGQUERY_LOCATION }}
       DBT_GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-dbt-service-account.json
@@ -206,7 +223,7 @@ jobs:
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2
         with:
-          project_id: ${{ secrets.BIGQUERY_PROJECT_ID }}
+          project_id: ${{ env.BIGQUERY_PROJECT_ID }}
 
       - name: Authenticate gcloud
         run: |
