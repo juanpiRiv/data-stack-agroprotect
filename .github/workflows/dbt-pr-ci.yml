@@ -125,6 +125,12 @@ jobs:
         run: |
           echo "${{ steps.changed_sql.outputs.files }}" | sed 's|^agro-protect/||' | xargs -d '\n' sqlfluff lint
 
+      # setup-gcloud avisa si no hay credenciales; hay que activar la SA antes.
+      - name: Authenticate gcloud (dbt service account)
+        run: |
+          gcloud auth activate-service-account --key-file="${GOOGLE_APPLICATION_CREDENTIALS}"
+          gcloud config set project "${DBT_TAP_RESOLVED_PROJECT:-${BIGQUERY_PROJECT_ID}}" --quiet
+
       - name: Set up gcloud (manifest from GCS)
         uses: google-github-actions/setup-gcloud@v2
         with:
@@ -137,12 +143,13 @@ jobs:
           DBT_MANIFEST_URL: ${{ secrets.DBT_MANIFEST_URL }}
         run: |
           mkdir -p agro-protect/transform/prod-artifacts
-          gcloud auth activate-service-account --key-file="${GOOGLE_APPLICATION_CREDENTIALS}"
           ok=1
           if [[ -n "${DBT_MANIFEST_GCS_URI}" ]]; then
             if gcloud storage cp "${DBT_MANIFEST_GCS_URI}" agro-protect/transform/prod-artifacts/manifest.json; then
               echo "Manifest from GCS: ${DBT_MANIFEST_GCS_URI}"
               ok=0
+            else
+              echo "::notice::No hay objeto en ${DBT_MANIFEST_GCS_URI} (normal hasta el primer deploy en main que suba manifest.json con dbt-cd-docs). dbt hará build completo."
             fi
           elif [[ -n "${DBT_MANIFEST_URL}" ]]; then
             if [[ "${DBT_MANIFEST_URL}" == gs://* ]]; then
@@ -170,6 +177,11 @@ jobs:
         run: |
           chmod +x agro-protect/transform/ci/ensure_tap_agro_raw_for_dbt.sh
           agro-protect/transform/ci/ensure_tap_agro_raw_for_dbt.sh
+
+      # ensure_* puede escribir BIGQUERY_PROJECT_ID en GITHUB_ENV (alinear con project_id de la key).
+      - name: Sync gcloud default project
+        run: |
+          gcloud config set project "${BIGQUERY_PROJECT_ID}" --quiet
 
       # dbt-bigquery resuelve fuentes en la región del perfil. Si prod_tap_agro vive en US y el
       # secret dice p. ej. southamerica-east1, BQ devuelve "Dataset not found in location".
