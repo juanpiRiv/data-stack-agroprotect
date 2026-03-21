@@ -1,0 +1,24 @@
+province_name,rural_property_tax_usd_ha_min,rural_property_tax_usd_ha_max,rural_property_tax_usd_ha_avg,gross_turnover_tax_pct
+Buenos Aires,25,35,30,1
+Catamarca,3,8,5.5,0
+Chaco,10,20,15,0.5
+Chubut,3,10,6.5,0.5
+Corrientes,10,20,15,0.5
+Córdoba,30,40,35,0
+Entre Ríos,20,30,25,0.75
+Formosa,5,15,10,0.5
+Jujuy,5,15,10,0.5
+La Pampa,15,25,20,0.5
+La Rioja,3,8,5.5,0
+Mendoza,5,15,10,0.5
+Misiones,10,20,15,0.5
+Neuquén,5,15,10,0.5
+Río Negro,5,15,10,0.5
+Salta,10,20,15,0.5
+San Juan,5,10,7.5,0.5
+San Luis,10,20,15,1
+Santa Cruz,3,10,6.5,0.5
+Santa Fe,10,20,15,0
+Santiago del Estero,10,20,15,0.5
+Tierra del Fuego,3,8,5.5,0.5
+Tucumán,10,20,15,0.5

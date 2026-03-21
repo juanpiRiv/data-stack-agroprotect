@@ -1,0 +1,26 @@
+version: 2
+
+seeds:
+  - name: tax_province
+    description: Cleaned provincial agro tax seed generated from the repository CSV.
+    columns:
+      - name: province_name
+        tests:
+          - not_null
+          - unique
+
+  - name: yield_department_campaign
+    description: Cleaned and consolidated department-level yield seed for soja, maíz, and trigo.
+    columns:
+      - name: crop_name
+        tests:
+          - not_null
+      - name: campaign_name
+        tests:
+          - not_null
+      - name: province_name
+        tests:
+          - not_null
+      - name: department_name
+        tests:
+          - not_null

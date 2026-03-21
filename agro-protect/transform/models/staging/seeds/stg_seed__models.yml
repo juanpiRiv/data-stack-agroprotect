@@ -1,0 +1,39 @@
+version: 2
+
+models:
+  - name: stg_seed__tax_province
+    description: Cleaned provincial tax reference data loaded from dbt seeds.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - province_key
+    columns:
+      - name: province_name
+        description: Province display name used in marts.
+        tests:
+          - not_null
+      - name: gross_turnover_tax_pct
+        description: Provincial gross turnover tax rate for agro activity.
+
+  - name: stg_seed__yield_department_campaign
+    description: Cleaned and consolidated crop yield seed at department and campaign grain.
+    columns:
+      - name: crop_name
+        description: Crop name in Spanish.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['soja', 'maíz', 'trigo']
+      - name: campaign_name
+        description: Agricultural campaign label in YYYY/YYYY format.
+        tests:
+          - not_null
+      - name: province_name
+        description: Province display name.
+        tests:
+          - not_null
+      - name: department_name
+        description: Department display name.
+        tests:
+          - not_null
