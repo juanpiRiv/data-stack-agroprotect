@@ -72,6 +72,19 @@ jobs:
           fi
           python3 -c "import json, pathlib, sys; p=pathlib.Path(sys.argv[1]); json.loads(p.read_text())" "${GOOGLE_APPLICATION_CREDENTIALS}"
 
+      # Secret vacío o solo espacios deja BIGQUERY_PROJECT_ID "" y BigQuery responde ProjectId must be non-empty.
+      - name: Normalize BIGQUERY_PROJECT_ID
+        run: |
+          set -euo pipefail
+          BQP="$(printf '%s' "${BIGQUERY_PROJECT_ID:-}" | xargs)"
+          if [ -z "${BQP}" ]; then
+            BQP="$(jq -r '.project_id // empty' "${GOOGLE_APPLICATION_CREDENTIALS}" | xargs)"
+          fi
+          if [ -z "${BQP}" ]; then
+            BQP="agro-protect-490822"
+          fi
+          echo "BIGQUERY_PROJECT_ID=${BQP}" >> "${GITHUB_ENV}"
+
       - name: Export to GCS
         working-directory: agro-protect
         run: python scripts/export_to_gcs.py
