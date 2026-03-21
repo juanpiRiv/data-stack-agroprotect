@@ -1,0 +1,71 @@
+version: 2
+
+models:
+  - name: stg_rendimiento_agro
+    description: >
+      Cleaned agricultural productivity data from seed CSV.
+      Contains crop yield, harvest ratios, and production metrics by province and year.
+    columns:
+      - name: cultivo
+        description: Crop name (e.g., soja, maíz)
+        tests:
+          - not_null
+      
+      - name: anio
+        description: Year of harvest
+        tests:
+          - not_null
+      
+      - name: provincia
+        description: Province name
+      
+      - name: provincia_id
+        description: Province ID code
+      
+      - name: rendimiento_kgxha
+        description: Yield in kg per hectare - PRIMARY PRODUCTIVITY METRIC
+        tests:
+          - not_null
+
+      - name: superficie_sembrada_ha
+        description: Area planted (hectares)
+
+      - name: superficie_cosechada_ha
+        description: Area harvested (hectares)
+
+      - name: produccion_tm
+        description: Total production (metric tons)
+
+      - name: harvest_ratio_pct
+        description: Percentage of planted area actually harvested
+      
+      - name: produccion_kg_ha_sown
+        description: Production efficiency in kg/ha of sown area
+      
+      - name: is_valid_record
+        description: Quality flag - 1 if record passes validation
+
+
+  - name: stg_impuestos_agro_argentina
+    description: >
+      Cleaned agricultural tax data by province.
+      Contains property taxes on rural land and gross income taxes on agricultural businesses.
+    columns:
+      - name: provincia
+        description: Province name
+        tests:
+          - not_null
+          - unique
+
+      - name: inmobiliario_rural_usd_ha
+        description: >
+          Property tax on rural real estate (USD per hectare).
+          Original data was stored as range (min-max), now averaged.
+      
+      - name: iibb_agro_pct
+        description: >
+          Gross income tax (Ingresos Brutos) for agriculture (% of revenue).
+          Tax rate varies by province, typically 0-1.5%.
+      
+      - name: is_valid_record
+        description: Quality flag - 1 if record passes validation

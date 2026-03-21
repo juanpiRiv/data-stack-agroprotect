@@ -1,0 +1,143 @@
+version: 2
+
+models:
+  - name: ag_risk_index
+    description: >
+      Agricultural Risk Index combining climate, productivity, and tax data.
+      Final mart model for risk assessment and visualization.
+      Outputs location-level risk scores suitable for interactive mapping.
+      
+      Risk Scale: 0-100 (higher = more risk)
+      
+      Weights:
+      - Climate Risk: 40% (weather-related threats)
+      - Productivity Risk: 35% (crop yield and efficiency)
+      - Tax Risk: 25% (financial burden)
+    
+    columns:
+      - name: location_id
+        description: Unique location identifier for mapping
+        tests:
+          - not_null
+          - unique
+      
+      - name: location_name
+        description: Human-readable location name
+      
+      - name: province_name
+        description: Province/state name
+      
+      - name: latitude
+        description: Geographic latitude for mapping
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "latitude >= -90 and latitude <= 90"
+      
+      - name: longitude
+        description: Geographic longitude for mapping
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "longitude >= -180 and longitude <= 180"
+      
+      # CLIMATE METRICS (last 90 days)
+      - name: max_temperature
+        description: Maximum temperature observed (°C)
+      
+      - name: min_temperature
+        description: Minimum temperature observed (°C)
+      
+      - name: avg_temperature
+        description: Average temperature (°C)
+      
+      - name: total_precipitation_90d
+        description: Total precipitation over 90-day period (mm)
+      
+      - name: avg_humidity
+        description: Average relative humidity (%)
+      
+      # CLIMATE RISK COMPONENTS
+      - name: frost_risk_pct
+        description: > 
+          Percentage of days with frost (T_min < 0°C) in 90-day period.
+          Higher = more frost events = crop damage risk.
+      
+      - name: heat_stress_risk_pct
+        description: >
+          Percentage of days exceeding 35°C in 90-day period.
+          Higher = more heat stress = reduced yields.
+      
+      - name: drought_stress_risk_pct
+        description: >
+          Percentage of days with low humidity (<30%) in 90-day period.
+          Indicates water stress for plants.
+      
+      - name: fungal_disease_risk_pct
+        description: >
+          Percentage of days favorable for fungal diseases
+          (humidity >80% AND temperature >15°C) in 90-day period.
+      
+      - name: excess_moisture_risk_pct
+        description: >
+          Percentage of days with heavy rainfall (>25mm) in 90-day period.
+          Higher = waterlogging, soil compaction risk.
+      
+      - name: climate_risk_score
+        description: >
+          Overall climate risk score (0-100).
+          Weighted combination of all climate hazards.
+          Calculation: frost(25%) + heat(25%) + drought(20%) + fungal(15%) + moisture(15%)
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "climate_risk_score >= 0 and climate_risk_score <= 100"
+      
+      # PRODUCTIVITY METRICS
+      - name: avg_yield
+        description: Average crop yield (kg/ha) from latest year in productivity data
+      
+      - name: productivity_risk_score
+        description: >
+          Productivity risk score (0-100).
+          Based on yield levels and harvest efficiency.
+          Lower yields and poor harvest ratios = higher risk.
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "productivity_risk_score >= 0 and productivity_risk_score <= 100"
+      
+      # TAX METRICS
+      - name: inmobiliario_rural_usd_ha
+        description: Property tax on rural land (USD/ha)
+      
+      - name: iibb_agro_pct
+        description: Agricultural gross income tax (% of revenue)
+      
+      - name: tax_risk_score
+        description: >
+          Tax burden risk score (0-100).
+          Based on normalization of property tax and income tax rates.
+          Higher taxes = higher financial risk.
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "tax_risk_score >= 0 and tax_risk_score <= 100"
+      
+      # FINAL RISK INDEX
+      - name: overall_risk_index
+        description: >
+          OVERALL AGRICULTURAL RISK INDEX (0-100).
+          
+          Weighted sum of three risk domains:
+          - Climate Risk (40%): Weather-related agricultural threats
+          - Productivity Risk (35%): Crop yield and efficiency
+          - Tax Risk (25%): Tax burden on agricultural operation
+          
+          Interpretation:
+          0-25: Low risk - favorable conditions
+          25-50: Moderate risk - some concerns
+          50-75: High risk - significant challenges
+          75-100: Critical risk - multiple major threats
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true:
+              expression: "overall_risk_index >= 0 and overall_risk_index <= 100"
+      
+      - name: calculated_at
+        description: Timestamp when this record was calculated
