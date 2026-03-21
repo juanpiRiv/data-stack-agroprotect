@@ -140,7 +140,7 @@ Workflow: **`.github/workflows/export-bigquery-gcs.yml`** (`export-bigquery-gcs`
 |--------|----------|-------------|
 | `EXPORT_GOOGLE_APPLICATION_CREDENTIALS` | Yes | Export SA JSON, **base64 single line** (`base64 -i key.json \| tr -d '\n'`) |
 | `BIGQUERY_PROJECT_ID` | Yes | Same as elsewhere in the repo |
-| `EXPORT_GCS_BUCKET_NAME` | Yes | e.g. `agroprotect-exports-prod` |
+| `EXPORT_GCS_BUCKET_NAME` | Yes | **Bucket id only** (e.g. `agroprotect-exports-prod`). Do not use `gs://…` or paths — the script builds the URI. |
 | `EXPORT_TABLE_MAP` | One or the other | **One-line** JSON, e.g. `{"locations":"analytics.stg_agro_locations"}` |
 | `EXPORT_BQ_TABLE_REF` | One or the other | `dataset.table` for a single table |
 | `EXPORT_GCS_BLOB_NAME` | No | File name without `.json` (only with `EXPORT_BQ_TABLE_REF`) |
@@ -154,7 +154,7 @@ Paste this **exact single line** as the secret value (no line breaks):
 {"locations":"analytics.stg_agro_locations","weather":"analytics.stg_agro_clima_diario_nasa_power"}
 ```
 
-Object keys (`locations`, `weather`) become file names: `locations.json`, `weather.json` under your prefix (default `prod/exports/`).
+Object keys (`locations`, `weather`) become export **prefixes**: BigQuery writes **sharded** objects like `locations_000000000000.json`, `weather_000000000000.json` under your prefix (default `prod/exports/`). Small tables usually produce one shard.
 
 **Dataset name:** Values must match **BigQuery** (`dataset.table`). In this repo, dbt **prod** staging often lives in the **`stg`** dataset (`stg.stg_agro_locations`, …), not `analytics`. If the job fails with “not found”, use:
 

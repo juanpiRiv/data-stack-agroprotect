@@ -49,14 +49,30 @@ def _fully_qualified_table(ref: str) -> str:
 def _gcs_prefix() -> str:
     # Empty or missing → default (GitHub Actions may inject the secret even when empty).
     raw = (os.environ.get("EXPORT_GCS_PREFIX") or "").strip()
+    if raw.lower().startswith("gs://"):
+        raw = raw[5:].lstrip("/")
     p = (raw or "prod/exports").strip("/")
     return f"{p}/" if p else ""
 
 
-def main() -> None:
-    bucket = os.environ.get("EXPORT_GCS_BUCKET_NAME", "").strip()
-    if not bucket:
+def _normalize_bucket(raw: str) -> str:
+    """Bucket name only — BigQuery rejects URIs like gs://gs://bucket/... if the secret includes gs://."""
+    b = (raw or "").strip()
+    if not b:
         raise SystemExit("EXPORT_GCS_BUCKET_NAME is required.")
+    if b.lower().startswith("gs://"):
+        b = b[5:].lstrip("/")
+    b = b.split("/")[0].strip()
+    if not b:
+        raise SystemExit(
+            "EXPORT_GCS_BUCKET_NAME must be only the bucket id (e.g. my-exports-bucket), "
+            "not a full gs:// URI or path."
+        )
+    return b.lower()
+
+
+def main() -> None:
+    bucket = _normalize_bucket(os.environ.get("EXPORT_GCS_BUCKET_NAME", ""))
 
     creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
     if not creds or not os.path.isfile(creds):
@@ -85,8 +101,10 @@ def main() -> None:
 
     for blob_key, table_ref in _table_map().items():
         fq = _fully_qualified_table(table_ref)
-        filename = blob_key if blob_key.endswith(".json") else f"{blob_key}.json"
-        dest_uri = f"gs://{bucket}/{prefix}{filename}"
+        # BigQuery expects a GCS *pattern* for extract; a bare single filename often 400s.
+        # Output shards: {base}_000000000000.json (one shard for small tables).
+        base = blob_key[:-5] if blob_key.endswith(".json") else blob_key
+        dest_uri = f"gs://{bucket}/{prefix}{base}_*.json"
 
         extract_job = client.extract_table(fq, dest_uri, job_config=job_config)
         extract_job.result()
