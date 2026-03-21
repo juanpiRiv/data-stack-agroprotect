@@ -74,6 +74,9 @@ jobs:
       DBT_GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-dbt-service-account.json
       GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-dbt-service-account.json
       DBT_USER: ${{ secrets.DBT_USER }}
+      # Dataset real de la fuente tap_nasa (default raw_nasa). Si en BQ tiene otro nombre, definí variable de repo o secret.
+      DBT_RAW_NASA_DATASET: ${{ vars.DBT_RAW_NASA_DATASET }}
+      DBT_TAP_AGRO_DATASET: ${{ vars.DBT_TAP_AGRO_DATASET || 'prod_tap_agro' }}
       PAGES_ARTIFACT_NAME: github-pages-${{ github.run_attempt }}
     steps:
       - name: Checkout
@@ -162,24 +165,34 @@ jobs:
 
           norm_upper() { printf '%s' "$1" | tr '[:lower:]' '[:upper:]'; }
 
+          RAW_DS="$(printf '%s' "${DBT_RAW_NASA_DATASET:-}" | xargs)"
+          RAW_DS="${RAW_DS:-prod_tap_agro}"
+          TAP_DS="$(printf '%s' "${DBT_TAP_AGRO_DATASET:-prod_tap_agro}" | xargs)"
+          TAP_DS="${TAP_DS:-prod_tap_agro}"
+
           STG_LOC="$(ds_location stg)"
+          RAW_LOC="$(ds_location "${RAW_DS}")"
+          TAP_LOC="$(ds_location "${TAP_DS}")"
           MAIN_LOC="$(ds_location "${SCHEMA_MAIN}")"
 
-          if [ -n "${STG_LOC}" ] && [ "${STG_LOC}" != "null" ]; then
-            WANT="${STG_LOC}"
-            SRC="stg"
-          elif [ -n "${MAIN_LOC}" ] && [ "${MAIN_LOC}" != "null" ]; then
-            WANT="${MAIN_LOC}"
-            SRC="${SCHEMA_MAIN}"
-          else
-            WANT=""
-            SRC=""
-          fi
+          # Una sola región para perfil dbt (catálogo introspecta todas las fuentes).
+          WANT=""
+          for loc in "${STG_LOC}" "${RAW_LOC}" "${TAP_LOC}" "${MAIN_LOC}"; do
+            [ -z "${loc}" ] || [ "${loc}" = "null" ] && continue
+            if [ -z "${WANT}" ]; then
+              WANT="${loc}"
+              continue
+            fi
+            if [ "$(norm_upper "${loc}")" != "$(norm_upper "${WANT}")" ]; then
+              echo "::error::Datasets en regiones distintas (dbt-bigquery usa una sola location): stg=${STG_LOC} ${RAW_DS}=${RAW_LOC} ${TAP_DS}=${TAP_LOC} ${SCHEMA_MAIN}=${MAIN_LOC}. Unificá en BQ o revisá DBT_RAW_NASA_DATASET / nombres de dataset."
+              exit 1
+            fi
+          done
 
           CUR="$(printf '%s' "${BIGQUERY_LOCATION}" | xargs)"
           if [ -n "${WANT}" ]; then
             if [ "$(norm_upper "${WANT}")" != "$(norm_upper "${CUR}")" ]; then
-              echo "::warning::Dataset ${SRC} está en ${WANT} pero BIGQUERY_LOCATION=${CUR}. Ajustando para dbt prod."
+              echo "::warning::BIGQUERY_LOCATION=${CUR} distinto de datasets existentes (${WANT}). Ajustando para dbt prod y docs."
               echo "BIGQUERY_LOCATION=${WANT}" >> "${GITHUB_ENV}"
             fi
             CUR="${WANT}"

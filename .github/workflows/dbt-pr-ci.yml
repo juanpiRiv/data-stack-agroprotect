@@ -20,6 +20,7 @@ jobs:
       GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-dbt-service-account.json
       # Raw tap-agro dataset (same name Meltano uses: {env}_tap_agro). Override with repo variable DBT_TAP_AGRO_DATASET.
       DBT_TAP_AGRO_DATASET: ${{ vars.DBT_TAP_AGRO_DATASET || 'prod_tap_agro' }}
+      DBT_RAW_NASA_DATASET: ${{ vars.DBT_RAW_NASA_DATASET }}
       # Si Meltano carga en otro proyecto que dbt, definí el secret (sino queda igual a BIGQUERY_PROJECT_ID).
       DBT_TAP_AGRO_PROJECT: ${{ secrets.DBT_TAP_AGRO_PROJECT }}
       # Set true when raw_nasa.clima_diario_nasa_power_view exists in BigQuery.
