@@ -32,7 +32,7 @@ On the **export** service account:
 |--------|----------------|---------|
 | **Project** (where the extract job runs) | `BigQuery Job User` | Run `extract` |
 | **Dataset(s)** you read | `BigQuery Data Viewer` | Read tables/views |
-| **Export bucket** | `Storage Object Admin` (or `Object Creator` + `Object Viewer` on a prefix with IAM conditions) | Write `gs://…/*.json` |
+| **Export bucket** | `Storage Object Admin` (or `Object Creator` + `Object Viewer` on a prefix with IAM conditions) | Write `gs://…/*.json`, list objects (manifiesto), firmar URLs con la clave de la SA |
 
 If the dataset lives in another project, grant **Data Viewer** there and **Job User** where the client runs (usually the same project as `BIGQUERY_PROJECT_ID`).
 
@@ -82,30 +82,33 @@ Add to `.env` (see `.env.example`) or export in the shell:
 ```bash
 export GOOGLE_APPLICATION_CREDENTIALS=/secure/path/bq-export-to-gcs.json
 export BIGQUERY_PROJECT_ID=your-project
+export BIGQUERY_DATASET_ID=analytics   # usado en modo auto (dataset “principal” de dbt prod)
 export EXPORT_GCS_BUCKET_NAME=your-exports-bucket
 export EXPORT_GCS_PREFIX=prod/exports
-
-# Option A — multiple tables/views (values = dataset.table in your project)
-export EXPORT_TABLE_MAP='{"locations":"analytics.stg_agro_locations","weather":"analytics.stg_agro_clima_diario_nasa_power"}'
-
-# Option B — single table
-# export EXPORT_BQ_TABLE_REF=analytics.stg_agro_locations
-# export EXPORT_GCS_BLOB_NAME=locations   # → prod/exports/locations.json
 ```
 
-**Note:** tables must exist in BigQuery. You can export **raw** (`prod_tap_agro.*`) or **dbt views** (`stg_agro_*` in `analytics` / `BIGQUERY_DATASET_ID`). Example `EXPORT_TABLE_MAP` (single-line JSON):
+**Modo por defecto (auto):** si **no** definís `EXPORT_TABLE_MAP` ni `EXPORT_BQ_TABLE_REF`, el script recorre los datasets `stg`, `BIGQUERY_DATASET_ID` (default `analytics`) y `marts` (si existen), exporta cada tabla/vista extraíble a `gs://…/{prefix}{dataset}/{table}_*.json` (NDJSON) y sube **`export_manifest.json`** al bucket con **URLs firmadas (V4)** por cada archivo. En stderr verás `MANIFEST_SIGNED_URL=…` para descargar el JSON del manifiesto.
+
+- `EXPORT_BQ_DATASETS` — lista separada por comas para reemplazar la lista por defecto (ej. `stg,analytics,marts,prod_tap_agro`).
+- `EXPORT_MODE=auto` — fuerza auto aunque existan otras variables (raro).
+- `EXPORT_MODE=explicit` o `map` — exige `EXPORT_TABLE_MAP` o `EXPORT_BQ_TABLE_REF`.
+- `EXPORT_SIGNED_URL_TTL_SEC` — vigencia de las URLs firmadas (default **43200** s = 12 h, máx. 604800).
+- `EXPORT_MANIFEST_OBJECT` — nombre del objeto del manifieste (default `export_manifest.json`).
+- `DBT_MANIFEST_PATH` — ruta local a `target/manifest.json` tras `dbt docs generate`; si existe, se sube a `…/dbt/manifest.json` y se incluye en el manifieste con URL firmada.
+
+**Modo lista manual** (`EXPORT_TABLE_MAP` o `EXPORT_BQ_TABLE_REF`):
+
+```bash
+export EXPORT_TABLE_MAP='{"locations":"stg.stg_agro_locations","weather":"stg.stg_agro_clima_diario_nasa_power"}'
+# o una sola tabla:
+# export EXPORT_BQ_TABLE_REF=stg.stg_agro_locations
+```
+
+Ejemplos con proyecto explícito en el mapa:
 
 ```text
 {"clima":"your-project.prod_tap_agro.clima_diario_nasa_power","locations":"your-project.prod_tap_agro.locations"}
 ```
-
-After `dbt run` on agro staging:
-
-```text
-{"clima":"your-project.analytics.stg_agro_clima_diario_nasa_power","locations":"your-project.analytics.stg_agro_locations"}
-```
-
-Replace `your-project` with `BIGQUERY_PROJECT_ID` if the client does not already default the project.
 
 ### 2.3 Run
 
@@ -115,11 +118,13 @@ set -a && source .env && set +a   # if using .env
 python scripts/export_to_gcs.py
 ```
 
-Expected output: lines like `OK project.dataset.table -> gs://bucket/prefix/file.json`. Confirm objects in the GCS console.
+Expected output: líneas `OK … -> gs://…` y al final `OK export manifest -> gs://…` + `MANIFEST_SIGNED_URL=…`.
 
 ### Limits
 
-BigQuery may require a **wildcard** in the URI if an extract exceeds ~1 GiB per file. This script uses **one file per table** without wildcards; for very large tables you would extend the script (e.g. `name-*.json` and multiple shards).
+BigQuery usa un **patrón con `*`** en el destino; tablas grandes generan varios shards (`_000000000000.json`, …). El manifieste lista todos los objetos y firma cada uno.
+
+Las **vistas** (`VIEW`) no admiten `extract_table`; el script usa **`EXPORT DATA … AS SELECT *`** (mismo NDJSON en GCS).
 
 ---
 
@@ -133,30 +138,32 @@ BigQuery may require a **wildcard** in the URI if an extract exceeds ~1 GiB pe
 
 Workflow: **`.github/workflows/export-bigquery-gcs.yml`** (`export-bigquery-gcs`).
 
-- **When it runs:** every **6 hours** (UTC), **manual**, **push to `main`** when the script / `requirements-export.txt` / workflow changes, and when **`data-pipeline`** completes **successfully** on `main` (optional chained export).
+- **When it runs:** every **6 hours** (UTC), **manual**, **pull request** a `main` (cambios bajo `agro-protect/**` o este workflow), **push a `main`** (mismos paths + `transform/**` / `pyproject.toml`), y cuando **`data-pipeline`** termina **OK** en `main`.
+- **CI:** `dbt deps` + `dbt parse --target prod` → `transform/target/manifest.json`; luego el script sube NDJSON + ese manifest a GCS (y `export_manifest.json` con URLs firmadas). **No hace falta** GitHub Pages.
+- **PRs:** prefijo GCS automático `pr/<número>/exports/` para no pisar `prod/exports`. Los PRs desde **forks** no ejecutan el job (sin secrets).
 - **Secrets** (Settings → Secrets and variables → Actions):
 
 | Secret | Required | Description |
 |--------|----------|-------------|
 | `EXPORT_GOOGLE_APPLICATION_CREDENTIALS` | Yes | Export SA JSON, **base64 single line** (`base64 -i key.json \| tr -d '\n'`) |
+| `DBT_GOOGLE_APPLICATION_CREDENTIALS` | No | Si existe, **dbt parse** usa esta key; si no, reutiliza la key de export (misma SA posible). |
 | `BIGQUERY_PROJECT_ID` | Yes | Same as elsewhere in the repo |
-| `EXPORT_GCS_BUCKET_NAME` | Yes | **Bucket id only** (e.g. `agroprotect-exports-prod`). Do not use `gs://…` or paths — the script builds the URI. |
-| `EXPORT_TABLE_MAP` | One or the other | **One-line** JSON, e.g. `{"locations":"analytics.stg_agro_locations"}` |
-| `EXPORT_BQ_TABLE_REF` | One or the other | `dataset.table` for a single table |
+| `BIGQUERY_LOCATION` | No | Default **`US`** (workflow y script, alineado a `.env.example`). Si tus datasets están en otra región (`southamerica-east1`, …), definí el secret o `EXPORT_BIGQUERY_LOCATION`. |
+| `EXPORT_GCS_BUCKET_NAME` | No | Default **`agroprotect-exports-prod`**. **Bucket id only** (no `gs://`). Sobreescribí con secret/variable si usás otro bucket. |
+| `BIGQUERY_DATASET_ID` | No | Default **`analytics`** (workflow y modo auto). Debe coincidir con el `schema` de dbt **prod**. |
+| `EXPORT_TABLE_MAP` | No* | *Solo modo explícito. Si **omitís** este secret y `EXPORT_BQ_TABLE_REF`, corre **modo auto** (todos los datasets listados arriba). |
+| `EXPORT_BQ_TABLE_REF` | No* | Una tabla `dataset.table` si no usás mapa JSON. |
 | `EXPORT_GCS_BLOB_NAME` | No | File name without `.json` (only with `EXPORT_BQ_TABLE_REF`) |
 | `EXPORT_GCS_PREFIX` | No | If the secret is unset, the script defaults to `prod/exports` |
+| `EXPORT_BQ_DATASETS` | No | Lista `stg,analytics,marts` por defecto; sobreescribe con secret o variable de repo. |
 
-### Quick test secret (`EXPORT_TABLE_MAP`)
+### Sin `EXPORT_TABLE_MAP` (recomendado)
 
-Paste this **exact single line** as the secret value (no line breaks):
+Dejá vacíos (o no crees) los secrets `EXPORT_TABLE_MAP` y `EXPORT_BQ_TABLE_REF`. El workflow pasa `BIGQUERY_DATASET_ID` desde secrets (default `analytics`) y el script exporta **todo lo extraíble** en `stg`, ese dataset y `marts`.
 
-```text
-{"locations":"analytics.stg_agro_locations","weather":"analytics.stg_agro_clima_diario_nasa_power"}
-```
+### Lista manual opcional
 
-Object keys (`locations`, `weather`) become export **prefixes**: BigQuery writes **sharded** objects like `locations_000000000000.json`, `weather_000000000000.json` under your prefix (default `prod/exports/`). Small tables usually produce one shard.
-
-**Dataset name:** Values must match **BigQuery** (`dataset.table`). In this repo, dbt **prod** staging often lives in the **`stg`** dataset (`stg.stg_agro_locations`, …), not `analytics`. If the job fails with “not found”, use:
+Si preferís solo algunas tablas, definí **una** de:
 
 ```text
 {"locations":"stg.stg_agro_locations","weather":"stg.stg_agro_clima_diario_nasa_power"}
@@ -166,5 +173,5 @@ If you create **`EXPORT_GCS_PREFIX`** as an **empty** secret, GitHub may omit it
 
 ## Optional next steps
 
-- Manifest with signed URLs for the frontend.
 - Bucket CORS if the browser calls signed URLs directly.
+- **dbt-cd-docs** sigue publicando docs/manifest en Pages; el export en CI ya genera su propio `manifest.json` con `dbt parse` y lo sube a GCS.
