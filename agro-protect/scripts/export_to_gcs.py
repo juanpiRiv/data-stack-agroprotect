@@ -9,9 +9,13 @@ import sys
 
 from google.cloud import bigquery
 
+_DEFAULT_GCP_PROJECT = "agro-protect-490822"
+
 
 def _project_id() -> str:
-    return (os.environ.get("EXPORT_BQ_PROJECT_ID") or os.environ.get("BIGQUERY_PROJECT_ID") or "").strip()
+    return (
+        os.environ.get("EXPORT_BQ_PROJECT_ID") or os.environ.get("BIGQUERY_PROJECT_ID") or _DEFAULT_GCP_PROJECT
+    ).strip()
 
 
 def _table_map() -> dict[str, str]:

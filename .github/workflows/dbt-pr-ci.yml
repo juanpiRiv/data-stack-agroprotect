@@ -13,13 +13,15 @@ jobs:
     permissions:
       contents: read
     env:
-      BIGQUERY_PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID }}
+      BIGQUERY_PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID || 'agro-protect-490822' }}
       BIGQUERY_DATASET_ID: ${{ secrets.BIGQUERY_DATASET_ID }}
       BIGQUERY_LOCATION: ${{ secrets.BIGQUERY_LOCATION }}
       DBT_GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-dbt-service-account.json
       GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-dbt-service-account.json
-      # Meltano schedule loads prod_tap_agro; dev target alone would look for dev_tap_agro (empty / missing).
-      DBT_TAP_AGRO_DATASET: prod_tap_agro
+      # Raw tap-agro dataset (same name Meltano uses: {env}_tap_agro). Override with repo variable DBT_TAP_AGRO_DATASET.
+      DBT_TAP_AGRO_DATASET: ${{ vars.DBT_TAP_AGRO_DATASET || 'prod_tap_agro' }}
+      # Si Meltano carga en otro proyecto que dbt, definí el secret (sino queda igual a BIGQUERY_PROJECT_ID).
+      DBT_TAP_AGRO_PROJECT: ${{ secrets.DBT_TAP_AGRO_PROJECT }}
       # Set true when raw_nasa.clima_diario_nasa_power_view exists in BigQuery.
       DBT_ENABLE_RAW_NASA: 'false'
       DBT_USER: ci_pr_${{ github.event.pull_request.number }}
@@ -52,13 +54,37 @@ jobs:
 
       - name: Check required secrets for dbt profile
         run: |
-          if [ -z "${BIGQUERY_PROJECT_ID}" ] || [ -z "${BIGQUERY_LOCATION}" ]; then
-            echo "::error::Set repository secrets BIGQUERY_PROJECT_ID and BIGQUERY_LOCATION (required)."
+          # Trimear: secret con salto de línea pasa [ -z ] pero rompe bq ("ProjectId must be non-empty").
+          BQP="$(printf '%s' "${BIGQUERY_PROJECT_ID}" | xargs)"
+          BQL="$(printf '%s' "${BIGQUERY_LOCATION}" | xargs)"
+          if [ -z "${BQP}" ] || [ -z "${BQL}" ]; then
+            echo "::error::Set repository secrets BIGQUERY_PROJECT_ID and BIGQUERY_LOCATION (required, sin espacios/saltos extra)."
             exit 1
           fi
+          # Project ID de GCP: 6-30 chars, minúsculas/dígitos/guiones, empieza con letra (no uses el nombre visible ni el número de proyecto).
+          if ! printf '%s' "${BQP}" | grep -qE '^[a-z][a-z0-9-]{4,28}[a-z0-9]$'; then
+            echo "::error::BIGQUERY_PROJECT_ID no parece un ID válido de proyecto GCP (ej. mi-proyecto-123). En Console: Configuración del proyecto → copiar **ID del proyecto**, no el nombre."
+            exit 1
+          fi
+          if [ -f "${DBT_GOOGLE_APPLICATION_CREDENTIALS}" ] && command -v jq >/dev/null 2>&1; then
+            KEY_PID="$(jq -r '.project_id // empty' "${DBT_GOOGLE_APPLICATION_CREDENTIALS}")"
+            KEY_SA="$(jq -r '.client_email // empty' "${DBT_GOOGLE_APPLICATION_CREDENTIALS}")"
+            echo "::notice::dbt SA (key JSON): ${KEY_SA} | project_id en la key: ${KEY_PID}"
+            if [ -n "${KEY_PID}" ] && [ "${KEY_PID}" != "${BQP}" ]; then
+              echo "::notice::BIGQUERY_PROJECT_ID (${BQP}) ≠ project_id de la key. OK si la SA tiene IAM en ${BQP}; si falla con 'project not found', concedé BigQuery en ese proyecto o corregí el secret."
+            fi
+          fi
+          echo "BIGQUERY_PROJECT_ID=${BQP}" >> "${GITHUB_ENV}"
+          echo "BIGQUERY_LOCATION=${BQL}" >> "${GITHUB_ENV}"
+          # Proyecto donde viven las tablas raw del tap (igual que source_tap_agro.yml). Evita bq/dbt con projectId vacío.
+          TAP_PROJ="$(printf '%s' "${DBT_TAP_AGRO_PROJECT:-}" | xargs)"
+          TAP_PROJ="${TAP_PROJ:-${BQP}}"
+          echo "DBT_TAP_RESOLVED_PROJECT=${TAP_PROJ}" >> "${GITHUB_ENV}"
           if [ -z "${BIGQUERY_DATASET_ID}" ]; then
             echo "::notice::BIGQUERY_DATASET_ID is empty; profiles.yml.example defaults schema to analytics (set the secret to your real dbt dataset id)."
           fi
+          # Debe coincidir con el ID del proyecto en la consola de GCP (ej. agro-protect-490822).
+          echo "::notice::Fuentes tap_agro → proyecto ${TAP_PROJ} (BIGQUERY_PROJECT_ID; opcional secret DBT_TAP_AGRO_PROJECT si Meltano usa otro proyecto)."
 
       - name: Prepare dbt profiles
         run: |
@@ -99,10 +125,40 @@ jobs:
         run: |
           echo "${{ steps.changed_sql.outputs.files }}" | sed 's|^agro-protect/||' | xargs -d '\n' sqlfluff lint
 
+      # Instalar gcloud primero; luego auth (si no, `gcloud` no existe en el runner).
       - name: Set up gcloud (manifest from GCS)
         uses: google-github-actions/setup-gcloud@v2
         with:
-          project_id: ${{ secrets.BIGQUERY_PROJECT_ID }}
+          # Mismo proyecto que stub tap-agro / perfil (GITHUB_ENV tras "Check required secrets").
+          project_id: ${{ env.DBT_TAP_RESOLVED_PROJECT || env.BIGQUERY_PROJECT_ID }}
+
+      - name: Authenticate gcloud (dbt service account)
+        run: |
+          gcloud auth activate-service-account --key-file="${GOOGLE_APPLICATION_CREDENTIALS}"
+
+      # Si el secret apunta a un proyecto sin acceso para esta SA, alinear con project_id del JSON (evita fallback duplicado en shell).
+      - name: Align BIGQUERY_PROJECT_ID with bq-accessible project
+        run: |
+          set -euo pipefail
+          BQP="$(printf '%s' "${BIGQUERY_PROJECT_ID}" | xargs)"
+          KEY_PID="$(jq -r '.project_id // empty' "${GOOGLE_APPLICATION_CREDENTIALS}" | xargs)"
+          if [ -z "${KEY_PID}" ]; then
+            echo "::notice::Sin project_id en el JSON de credenciales; se mantiene BIGQUERY_PROJECT_ID=${BQP}"
+            exit 0
+          fi
+          if bq ls --project_id="${BQP}" "${BQP}:" >/dev/null 2>&1; then
+            echo "::notice::BIGQUERY_PROJECT_ID=${BQP} accesible para bq"
+            exit 0
+          fi
+          if bq ls --project_id="${KEY_PID}" "${KEY_PID}:" >/dev/null 2>&1; then
+            echo "::warning::BIGQUERY_PROJECT_ID=${BQP} no accesible con esta SA; CI usa el project_id de la key (${KEY_PID}). Actualizá el secret BIGQUERY_PROJECT_ID para coincidir."
+            echo "BIGQUERY_PROJECT_ID=${KEY_PID}" >> "${GITHUB_ENV}"
+            TAP_OVERRIDE="$(printf '%s' "${DBT_TAP_AGRO_PROJECT:-}" | xargs)"
+            echo "DBT_TAP_RESOLVED_PROJECT=${TAP_OVERRIDE:-${KEY_PID}}" >> "${GITHUB_ENV}"
+          else
+            echo "::error::Ni BIGQUERY_PROJECT_ID (${BQP}) ni el project_id de la key (${KEY_PID}) permiten bq ls. Revisá IAM y el secret."
+            exit 1
+          fi
 
       - name: Download production manifest
         env:
@@ -110,12 +166,13 @@ jobs:
           DBT_MANIFEST_URL: ${{ secrets.DBT_MANIFEST_URL }}
         run: |
           mkdir -p agro-protect/transform/prod-artifacts
-          gcloud auth activate-service-account --key-file="${GOOGLE_APPLICATION_CREDENTIALS}"
           ok=1
           if [[ -n "${DBT_MANIFEST_GCS_URI}" ]]; then
             if gcloud storage cp "${DBT_MANIFEST_GCS_URI}" agro-protect/transform/prod-artifacts/manifest.json; then
               echo "Manifest from GCS: ${DBT_MANIFEST_GCS_URI}"
               ok=0
+            else
+              echo "::notice::No hay objeto en ${DBT_MANIFEST_GCS_URI} (normal hasta el primer deploy en main que suba manifest.json con dbt-cd-docs). dbt hará build completo."
             fi
           elif [[ -n "${DBT_MANIFEST_URL}" ]]; then
             if [[ "${DBT_MANIFEST_URL}" == gs://* ]]; then
@@ -139,6 +196,77 @@ jobs:
             rm -f agro-protect/transform/prod-artifacts/manifest.json
           fi
 
+      - name: Ensure tap-agro raw dataset and stub tables (dbt sources)
+        run: agro-protect/transform/ci/ensure_tap_agro_raw_for_dbt.sh
+
+      # dbt-bigquery resuelve fuentes en la región del perfil. Si prod_tap_agro vive en US y el
+      # secret dice p. ej. southamerica-east1, BQ devuelve "Dataset not found in location".
+      - name: Align BIGQUERY_LOCATION with tap-agro dataset region
+        run: |
+          set -euo pipefail
+          TAP_PROJ="${DBT_TAP_RESOLVED_PROJECT:-${BIGQUERY_PROJECT_ID}}"
+          DS_INFO=$(bq show --format=json "${TAP_PROJ}:${DBT_TAP_AGRO_DATASET}" 2>/dev/null || true)
+          if [ -z "${DS_INFO}" ]; then
+            echo "No se pudo describir el dataset ${DBT_TAP_AGRO_DATASET}; se usa BIGQUERY_LOCATION del secret."
+            exit 0
+          fi
+          DS_LOC=$(echo "${DS_INFO}" | jq -r '.location // empty')
+          if [ -z "${DS_LOC}" ] || [ "${DS_LOC}" = "null" ]; then
+            exit 0
+          fi
+          if [ "${DS_LOC}" != "${BIGQUERY_LOCATION}" ]; then
+            echo "::warning::Dataset ${DBT_TAP_AGRO_DATASET} está en ${DS_LOC} pero BIGQUERY_LOCATION=${BIGQUERY_LOCATION}. Ajustando para dbt."
+            echo "BIGQUERY_LOCATION=${DS_LOC}" >> "${GITHUB_ENV}"
+          fi
+
+      # Igual que generate_schema_name (dev sin --defer → SANDBOX_<DBT_USER>). Si el dataset existe en otra región que BIGQUERY_LOCATION, bq show hace skip pero dbt falla → comprobar location y recrear sandbox; stg no se borra solo.
+      - name: Ensure dbt PR datasets (SANDBOX_* + stg)
+        run: |
+          set -euo pipefail
+          PROJECT="${DBT_TAP_RESOLVED_PROJECT:-${BIGQUERY_PROJECT_ID}}"
+          LOC="${BIGQUERY_LOCATION}"
+          raw="${DBT_USER:-default_user}"
+          user="${raw%%@*}"
+          user="${user//./_}"
+          user="${user//-/_}"
+          uu=$(printf '%s' "$user" | tr '[:lower:]' '[:upper:]')
+          SANDBOX="SANDBOX_${uu}"
+
+          norm_loc() { printf '%s' "$1" | tr '[:lower:]' '[:upper:]'; }
+
+          ensure_dataset() {
+            local id="$1"
+            local kind="$2"
+            local info existing want have
+            if info=$(bq show --format=json --project_id="${PROJECT}" "${PROJECT}:${id}" 2>/dev/null); then
+              existing=$(echo "${info}" | jq -r '.location // empty')
+            else
+              existing=""
+            fi
+            want="$(norm_loc "${LOC}")"
+            if [ -z "${existing}" ] || [ "${existing}" = "null" ]; then
+              echo "creando ${PROJECT}.${id} (location=${LOC})…"
+              bq --project_id="${PROJECT}" mk --dataset --location="${LOC}" "${PROJECT}:${id}"
+              return
+            fi
+            have="$(norm_loc "${existing}")"
+            if [ "${have}" = "${want}" ]; then
+              echo "dataset ${PROJECT}.${id} OK (location=${existing})"
+              return
+            fi
+            if [ "${kind}" = "sandbox" ]; then
+              echo "::warning::${id} estaba en ${existing}; recreando en ${LOC} para alinear con dbt…"
+              bq --project_id="${PROJECT}" rm -r -f -d "${PROJECT}:${id}"
+              bq --project_id="${PROJECT}" mk --dataset --location="${LOC}" "${PROJECT}:${id}"
+              return
+            fi
+            echo "::error::El dataset \`stg\` existe en la región ${existing} pero BIGQUERY_LOCATION=${LOC} (dbt-bigquery requiere coincidencia). En BigQuery mové/recread \`stg\` o ajustá BIGQUERY_LOCATION al dataset real."
+            exit 1
+          }
+
+          ensure_dataset "${SANDBOX}" sandbox
+          ensure_dataset "stg" stg
+
       - name: Run dbt build in sandbox
         working-directory: agro-protect/transform
         env:
@@ -156,7 +284,7 @@ jobs:
     permissions:
       contents: read
     env:
-      BIGQUERY_PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID }}
+      BIGQUERY_PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID || 'agro-protect-490822' }}
       BIGQUERY_DATASET_ID: ${{ secrets.BIGQUERY_DATASET_ID }}
       BIGQUERY_LOCATION: ${{ secrets.BIGQUERY_LOCATION }}
       DBT_GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-dbt-service-account.json
@@ -171,7 +299,7 @@ jobs:
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2
         with:
-          project_id: ${{ secrets.BIGQUERY_PROJECT_ID }}
+          project_id: ${{ env.BIGQUERY_PROJECT_ID }}
 
       - name: Authenticate gcloud
         run: |

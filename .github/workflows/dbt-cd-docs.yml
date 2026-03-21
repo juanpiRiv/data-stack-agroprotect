@@ -17,7 +17,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     env:
-      BIGQUERY_PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID }}
+      BIGQUERY_PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID || 'agro-protect-490822' }}
       BIGQUERY_DATASET_ID: ${{ secrets.BIGQUERY_DATASET_ID }}
       BIGQUERY_LOCATION: ${{ secrets.BIGQUERY_LOCATION }}
       DBT_GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-dbt-service-account.json
@@ -66,7 +66,7 @@ jobs:
       group: pages
       cancel-in-progress: true
     env:
-      BIGQUERY_PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID }}
+      BIGQUERY_PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID || 'agro-protect-490822' }}
       BIGQUERY_DATASET_ID: ${{ secrets.BIGQUERY_DATASET_ID }}
       BIGQUERY_LOCATION: ${{ secrets.BIGQUERY_LOCATION }}
       DBT_GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-dbt-service-account.json
@@ -105,6 +105,7 @@ jobs:
           dbt deps
           dbt build --target prod
 
+      # En CI no se usa `dbt docs serve` (solo sirve en local); aquí generate + artifact → Pages.
       - name: Generate dbt docs
         working-directory: agro-protect/transform
         env:
@@ -116,7 +117,13 @@ jobs:
         if: ${{ secrets.DBT_MANIFEST_GCS_URI != '' }}
         uses: google-github-actions/setup-gcloud@v2
         with:
-          project_id: ${{ secrets.BIGQUERY_PROJECT_ID }}
+          project_id: ${{ env.BIGQUERY_PROJECT_ID }}
+
+      - name: Authenticate gcloud (manifest → GCS)
+        if: ${{ secrets.DBT_MANIFEST_GCS_URI != '' }}
+        run: |
+          gcloud auth activate-service-account --key-file="${GOOGLE_APPLICATION_CREDENTIALS}"
+          gcloud config set project "${BIGQUERY_PROJECT_ID}" --quiet
 
       - name: Upload dbt manifest to GCS (slim CI en PRs)
         if: ${{ secrets.DBT_MANIFEST_GCS_URI != '' }}
@@ -124,7 +131,6 @@ jobs:
         env:
           DBT_MANIFEST_GCS_URI: ${{ secrets.DBT_MANIFEST_GCS_URI }}
         run: |
-          gcloud auth activate-service-account --key-file="${GOOGLE_APPLICATION_CREDENTIALS}"
           gcloud storage cp target/manifest.json "${DBT_MANIFEST_GCS_URI}"
 
       - name: Setup GitHub Pages
@@ -141,3 +147,8 @@ jobs:
         uses: actions/deploy-pages@v4
         with:
           artifact_name: ${{ env.PAGES_ARTIFACT_NAME }}
+
+      - name: URLs docs y manifest (slim CI)
+        run: |
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          echo "::notice::dbt docs: sitio interactivo en https://${GITHUB_REPOSITORY_OWNER}.github.io/${REPO_NAME}/ (requiere Settings → Pages → Source: GitHub Actions). Slim CI en PRs puede usar manifest.json en esa misma base URL o el secret DBT_MANIFEST_GCS_URI."

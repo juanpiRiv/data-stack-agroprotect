@@ -106,7 +106,7 @@ cp .env.example .env
 Edit `.env` with your credentials. Minimal example:
 
 ```bash
-BIGQUERY_PROJECT_ID=your-gcp-project
+BIGQUERY_PROJECT_ID=agro-protect-490822
 BIGQUERY_DATASET_ID=analytics
 BIGQUERY_LOCATION=US
 DBT_GOOGLE_APPLICATION_CREDENTIALS=/path/to/dbt-service-account.json
@@ -261,6 +261,7 @@ dbt build
 ```
 
 > [i] INFO: Raw data stays in the tap’s dataset; in dev models go to `SANDBOX_<DBT_USER>`.
+> [i] INFO: Creá ese dataset (y `stg` si usás `--defer`) en BigQuery en la **misma región** que `BIGQUERY_LOCATION`, p. ej. `bq mk --dataset --location=US ${BIGQUERY_PROJECT_ID}:SANDBOX_tu_usuario`. En PRs, GitHub Actions lo hace por región alineada a `prod_tap_agro`.
 > [i] INFO: If you modify models or YAML, run `dbt build` again.
 
 ### Add a new model
@@ -328,17 +329,17 @@ base64 -i /path/to/service-account.json | tr -d '\n'
 
 - `data-pipeline.yml`: **`meltano run tap-agro target-bigquery`** (extract then load to BigQuery). **Daily cron** = yesterday (ART) → `prod`. **Manual dispatch** defaults the same; or fixed window from `meltano.yml` / validate-only. ~10y history: script under `extraction/scripts/`. Local run: **`extraction/README.md`**.
 - `export-bigquery-gcs.yml`: **export BQ → GCS** (NDJSON) via `agro-protect/scripts/export_to_gcs.py`. **Every 6 h** cron + manual + push to `main` when the script changes. Secrets: `EXPORT_GOOGLE_APPLICATION_CREDENTIALS` (base64), `EXPORT_GCS_BUCKET_NAME`, `EXPORT_TABLE_MAP` or `EXPORT_BQ_TABLE_REF`; details in **`scripts/README.md`**.
-- `dbt-pr-ci.yml`: on PR. `dbt build` in sandbox + SQLFluff (fails if raw data is not aligned with `sources`).
-- `dbt-cd-docs.yml`: push a `main`. `dbt build` + docs en Pages.
+- `dbt-pr-ci.yml`: on PR. Alinea proyecto (secret vs key JSON) y región con `prod_tap_agro`; crea/recrea datasets `SANDBOX_*` si la región no coincide; `dbt build` en sandbox + SQLFluff.
+- `dbt-cd-docs.yml`: al **merge/push a `main`** o **workflow_dispatch** corre el job **deploy**: `dbt build` (prod) → **`dbt docs generate`** → sube `target/` a **GitHub Pages** (no se usa `dbt docs serve` en CI; eso es solo en tu máquina). En PR solo valida `dbt parse`. Opcional: sube `target/manifest.json` a GCS si definís `DBT_MANIFEST_GCS_URI`.
 
 > [i] INFO: dbt workflows use `dbt build` when the job runs.
 
 ### Slim CI (prod manifest)
 
-- PR manifest lookup order: **`DBT_MANIFEST_GCS_URI`** → `DBT_MANIFEST_URL` (https or `gs://`) → GitHub Pages.
+- PR manifest lookup order: **`DBT_MANIFEST_GCS_URI`** → `DBT_MANIFEST_URL` (https or `gs://`) → GitHub Pages (`…/manifest.json`).
 - With `state:modified+` and `--defer`, dbt compiles/runs only what changed and defers the rest to prod.
 - Without a valid manifest, the job does a **full build** (slower but safe).
-- The GCS manifest is **updated** in **`dbt-cd-docs`** after `dbt docs generate` (same `manifest.json` dbt writes under `target/`).
+- El `manifest.json` para slim CI sale del mismo `dbt docs generate` en **`dbt-cd-docs`**: o lo copiás a GCS (secret) o queda publicado en Pages en la raíz del sitio (`manifest.json`). Hasta que **Pages esté habilitado** y haya un deploy exitoso en `main`, el fallback por URL suele fallar y es normal.
 
 ### SQLFluff
 
@@ -351,9 +352,10 @@ In PR, only modified SQL models are linted.
 
 ### Enable GitHub Pages
 
-1. Go to Settings -> Pages.
-2. In Source, choose GitHub Actions.
-3. After a push to `main`, the docs are published.
+1. Repo → **Settings** → **Pages**.
+2. **Build and deployment** → **Source**: **GitHub Actions** (no “Deploy from a branch”).
+3. Hacé push a **`main`** (o **Actions** → **dbt-cd-docs** → **Run workflow**) para que el job **deploy** publique `target/` (incluye `index.html`, `manifest.json`, etc.).
+4. Si el workflow falla por secretos GCP, el deploy a Pages no llega a ejecutarse; los PR seguirán sin manifest hasta que `dbt-cd-docs` complete bien.
 
 </details>
 

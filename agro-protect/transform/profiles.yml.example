@@ -6,7 +6,7 @@ agroprotect:
     dev:
       type: bigquery
       method: service-account
-      project: "{{ env_var('BIGQUERY_PROJECT_ID') }}"
+      project: "{{ env_var('BIGQUERY_PROJECT_ID', 'agro-protect-490822') }}"
       schema: "{{ env_var('BIGQUERY_DATASET_ID', 'analytics') }}"
       location: "{{ env_var('BIGQUERY_LOCATION') }}"
       keyfile: "{{ env_var('DBT_GOOGLE_APPLICATION_CREDENTIALS') }}"
@@ -15,7 +15,7 @@ agroprotect:
     ci:
       type: bigquery
       method: service-account
-      project: "{{ env_var('BIGQUERY_PROJECT_ID') }}"
+      project: "{{ env_var('BIGQUERY_PROJECT_ID', 'agro-protect-490822') }}"
       schema: "{{ env_var('BIGQUERY_DATASET_ID', 'analytics') }}_ci"
       location: "{{ env_var('BIGQUERY_LOCATION') }}"
       keyfile: "{{ env_var('DBT_GOOGLE_APPLICATION_CREDENTIALS') }}"
@@ -24,7 +24,7 @@ agroprotect:
     prod:
       type: bigquery
       method: service-account
-      project: "{{ env_var('BIGQUERY_PROJECT_ID') }}"
+      project: "{{ env_var('BIGQUERY_PROJECT_ID', 'agro-protect-490822') }}"
       schema: "{{ env_var('BIGQUERY_DATASET_ID', 'analytics') }}"
       location: "{{ env_var('BIGQUERY_LOCATION') }}"
       keyfile: "{{ env_var('DBT_GOOGLE_APPLICATION_CREDENTIALS') }}"
