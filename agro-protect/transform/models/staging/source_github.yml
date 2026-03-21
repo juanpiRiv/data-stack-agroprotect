@@ -1,11 +1,11 @@
 version: 2
 
-# Legacy: el proyecto ya no usa tap-github en Meltano. Mantener hasta migrar a tu fuente agro
-# (mismo patrón: name + schema = dataset BigQuery = {target}_{namespace_tap}).
+# Legacy: el proyecto ya no usa tap-github en Meltano. Mantener hasta migrar modelos a otra fuente.
+# Patrón: name + schema = dataset BigQuery = {target}_{namespace_tap}. Agro activo: source_tap_agro.yml.
 
 sources:
   - name: tap_github
-    description: Legacy GitHub raw (sin extractor activo; reemplazar al definir tap agro)
+    description: Legacy GitHub raw (sin extractor Meltano activo)
     schema: "{{ target.name }}_tap_github"
     tables:
       - name: repositories

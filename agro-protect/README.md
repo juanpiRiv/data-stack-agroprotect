@@ -2,9 +2,23 @@
 
 ## What is this?
 
-This repository implements the **AgroProtect** data stack on BigQuery: **Meltano** for extraction (tap a definir para datos agro) and **dbt** for modeling. This README walks through setup.
+This repository implements the **AgroProtect** data stack on BigQuery: **Meltano** extracts **agro weather** with **`tap-agro`** ([tap-meteorology](https://github.com/juanpiRiv/tap-meteorology)) into **`{target}_tap_agro`**, and **dbt** models staging and marts. This README walks through setup.
 
-**Estado extracción:** `tap-agro` (meteorología) está definido en `extraction/meltano.yml` → [tap-meteorology](https://github.com/juanpiRiv/tap-meteorology). **dbt** aún no modela esas tablas: los YAML/SQL bajo `transform/models` siguen referenciando fuentes legacy `tap_github` hasta que añadas `sources` para `{target}_tap_agro` y nuevos `stg_*` / marts.
+**Extraction → transform:** raw in BigQuery (`prod_tap_agro`, …) and dbt staging (`stg_agro_*`, `source_tap_agro.yml` under `transform/models/staging/`). **`tap_github`** sources remain legacy until you migrate those models.
+
+### Production extraction checklist (GitHub Actions + GCP)
+
+| # | What to set |
+|---|-------------|
+| 1 | **Meltano service account** JSON as base64 (single line): `MELTANO_GOOGLE_APPLICATION_CREDENTIALS`. |
+| 2 | **BigQuery:** `BIGQUERY_PROJECT_ID`, `BIGQUERY_LOCATION`; optional `TARGET_BIGQUERY_*` overrides. SA needs at least **BigQuery Job User** + rights to load into `{env}_tap_agro`. |
+| 3 | **GCS state:** `MELTANO_STATE_BACKEND_URI=gs://bucket/prefix` on a bucket with billing; SA needs object read/write on that prefix. |
+| 4 | **Workflow:** [`.github/workflows/data-pipeline.yml`](../.github/workflows/data-pipeline.yml) — daily cron + `workflow_dispatch`. |
+| 5 | **Local:** run [`extraction/scripts/setup-local.sh`](extraction/scripts/setup-local.sh) once; it prints a **step-by-step** (venv + `meltano run …`). Optional: [`run_prod_elt.sh`](extraction/scripts/run_prod_elt.sh) as a shortcut. |
+
+Long backfill is **not** in Actions — run [`extraction/scripts/run_tap_agro_bq_yearly.sh`](extraction/scripts/run_tap_agro_bq_yearly.sh) locally; see [`extraction/README.md`](extraction/README.md).
+
+**Export BQ → GCS:** [`export-bigquery-gcs.yml`](../.github/workflows/export-bigquery-gcs.yml) — schedule, manual, push on export changes, and after a successful **`data-pipeline`** run on **`main`**. Details and `EXPORT_TABLE_MAP` in [`scripts/README.md`](scripts/README.md).
 
 ## 🎯 Prerequisites (read first)
 
@@ -26,11 +40,12 @@ source .venv/bin/activate
 
 Alternatively: `uv pip install --system -e ".[extraction,transform]"` (installs into the active Python, like CI).
 
-If you also installed Meltano globally (`uv tool install meltano`), your shell may pick **that** binary instead of `.venv/bin/meltano` and hit Alembic errors (`No such revision 'c0efb3c314eb'`). Use `which meltano` or run `.venv/bin/meltano` explicitly; see `extraction/README.md`.
+If you also installed Meltano globally (`uv tool install meltano`), your shell may pick **that** binary instead of `.venv/bin/meltano` and hit Alembic errors (`No such revision 'c0efb3c314eb'`) or **fail to persist state to GCS** (`ModuleNotFoundError: No module named 'google'`). Prefer **`./extraction/scripts/run_prod_elt.sh`** or **`./extraction/scripts/run_elt.sh`**, or **`.venv/bin/meltano`**, or `uv tool uninstall meltano`; see `extraction/README.md`.
 
 ## What it includes
 
-- Extraction with Meltano (**tap-agro** + `target-bigquery` / `target-jsonl` — ver `extraction/README.md`)
+- Extraction with Meltano (**tap-agro** + `target-bigquery` / `target-jsonl` — see [`extraction/README.md`](extraction/README.md))
+- **Export BQ → GCS** (NDJSON for a frontend): [`scripts/README.md`](scripts/README.md)
 - Transformation with dbt (staging -> marts)
 - Models and columns documented in YAML
 - CI/CD workflows and dbt docs on GitHub Pages
@@ -67,18 +82,18 @@ Then in bucket permissions:
 
 This allows Meltano to create and manage state files.
 
-2b. [GCS] Bucket para **`manifest.json` de dbt** (slim CI)
+2b. [GCS] Bucket for dbt **`manifest.json`** (slim CI)
 
-- Mismo bucket que Meltano o uno dedicado (ej. `gs://tu-proyecto-dbt-artifacts/dbt/manifest.json`).
-- La cuenta de servicio de **dbt** (la del secret `DBT_GOOGLE_APPLICATION_CREDENTIALS`) necesita **`Storage Object Admin`** (o `objectCreator` + `objectViewer`) sobre ese bucket/objeto.
-- En GitHub → Secrets definí **`DBT_MANIFEST_GCS_URI`** con la URI completa del objeto, por ejemplo: `gs://tu-bucket/dbt/manifest.json`.
-- Tras cada deploy exitoso de **`dbt-cd-docs`**, el workflow **sube** `target/manifest.json` a esa URI; los PRs de **`dbt-pr-ci`** la **descargan** para `state:modified+`.
+- Same bucket as Meltano or a dedicated one (e.g. `gs://your-project-dbt-artifacts/dbt/manifest.json`).
+- The **dbt** service account (`DBT_GOOGLE_APPLICATION_CREDENTIALS`) needs **`Storage Object Admin`** (or `objectCreator` + `objectViewer`) on that bucket/object.
+- In GitHub → Secrets set **`DBT_MANIFEST_GCS_URI`** to the full object URI, e.g. `gs://your-bucket/dbt/manifest.json`.
+- After a successful **`dbt-cd-docs`** deploy the workflow **uploads** `target/manifest.json` there; **`dbt-pr-ci`** PRs **download** it for `state:modified+`.
 
 3. [DB] Create BigQuery datasets (or grant create permissions)
 
 You will need datasets for raw and modeled data:
 
-- Raw: dataset `{env}_{tap_namespace}` que genere Meltano (ej. `prod_tap_rest_api_msdk`). Los YAML de dbt aún pueden apuntar a `<env>_tap_github` hasta que migres las `sources`.
+- Raw: **`{env}_tap_agro`** for `tap-agro` (e.g. `prod_tap_agro`). Optional legacy: `<env>_tap_github` if you still use old GitHub models.
 - Modeled: `stg` and `marts` (prod/ci). For dev, dbt uses `SANDBOX_<DBT_USER>`.
 
 4. [CFG] Configure variables
@@ -215,9 +230,9 @@ All column documentation lives in:
 
 ### Environments (dev, ci, prod)
 
-- dev: default target. Raw en el dataset que defina tu tap (p. ej. `dev_<namespace>`), modelos en `SANDBOX_<DBT_USER>`.
-- ci: raw en `ci_<namespace>`, modelos en `stg`/`marts`.
-- prod: raw en `prod_<namespace>`, modelos en `stg`/`marts` (deploy/docs).
+- dev: default target. Raw in `dev_<namespace>`; models in `SANDBOX_<DBT_USER>`.
+- ci: raw in `ci_<namespace>`; models in `stg` / `marts`.
+- prod: raw in `prod_<namespace>`; models in `stg` / `marts` (deploy/docs).
 
 If you do not pass `--target prod`, dbt uses the default target (dev).
 
@@ -283,7 +298,7 @@ Inside `agro-protect/`:
 <summary>CI/CD Setup</summary>
 
 Workflows live at the **repository root** (`.github/workflows/` next to `agro-protect/`).
-They assume `working-directory: agro-protect` for installs and run Meltano/dbt under `agro-protect/extraction` and `agro-protect/transform`. Configure secrets for BigQuery + Meltano. **`data-pipeline.yml`** ejecuta `meltano run tap-agro target-bigquery` en `prod` (ver `extraction/README.md`).
+They assume `working-directory: agro-protect` for installs and run Meltano/dbt under `agro-protect/extraction` and `agro-protect/transform`. Configure secrets for BigQuery + Meltano. **`data-pipeline.yml`** runs `meltano run tap-agro target-bigquery` for `prod` — see [`extraction/README.md`](extraction/README.md).
 
 ### Required GitHub secrets
 
@@ -299,6 +314,13 @@ They assume `working-directory: agro-protect` for installs and run Meltano/dbt u
 - `TARGET_BIGQUERY_PROJECT` if different from `BIGQUERY_PROJECT_ID`
 - `TARGET_BIGQUERY_LOCATION` if different from `BIGQUERY_LOCATION`
 
+**Export a GCS (workflow `export-bigquery-gcs`):**
+
+- `EXPORT_GOOGLE_APPLICATION_CREDENTIALS` (base64) — SA solo para export (lectura BQ + escritura en el bucket)
+- `EXPORT_GCS_BUCKET_NAME`
+- `EXPORT_TABLE_MAP` (JSON una línea) **o** `EXPORT_BQ_TABLE_REF` (+ opcional `EXPORT_GCS_BLOB_NAME`)
+- Opcional: `EXPORT_GCS_PREFIX` (si no existe, el script usa `prod/exports`)
+
 Encode the JSON key before saving to GitHub Secrets:
 
 ```bash
@@ -308,6 +330,7 @@ base64 -i /path/to/service-account.json | tr -d '\n'
 ### Workflows
 
 - `data-pipeline.yml`: **`meltano run tap-agro target-bigquery`** (extract y luego load a BigQuery). **Cron diario** = ayer (AR) → `prod`. **Dispatch manual** por defecto igual; o `meltano.yml` / solo validación. Histórico ~10 años: script en `extraction/scripts/`. Cómo correr en local: **`extraction/README.md`**.
+- `export-bigquery-gcs.yml`: **export BQ → GCS** (NDJSON) vía `agro-protect/scripts/export_to_gcs.py`. Cron cada **6 h** + dispatch manual + push a `main` si cambia el script. Secrets: `EXPORT_GOOGLE_APPLICATION_CREDENTIALS` (base64), `EXPORT_GCS_BUCKET_NAME`, `EXPORT_TABLE_MAP` o `EXPORT_BQ_TABLE_REF`; detalle en **`scripts/README.md`**.
 - `dbt-pr-ci.yml`: on PR. `dbt build` en sandbox + SQLFluff (fallará si no hay raw alineado con `sources`).
 - `dbt-cd-docs.yml`: push a `main`. `dbt build` + docs en Pages.
 
