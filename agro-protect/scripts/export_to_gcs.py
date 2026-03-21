@@ -118,6 +118,37 @@ def _table_ref_from_fq(fq: str) -> bigquery.TableReference:
     return bigquery.TableReference(dr, table_id)
 
 
+def _table_type_for_ref(client: bigquery.Client, bq_ref: bigquery.TableReference) -> str:
+    """Tipo TABLE/VIEW/… sin asumir que tables.get funciona (mensajes claros si el proyecto ref está mal)."""
+    fq = f"{bq_ref.project}.{bq_ref.dataset_id}.{bq_ref.table_id}"
+    ds_ref = bigquery.DatasetReference(bq_ref.project, bq_ref.dataset_id)
+    try:
+        for item in client.list_tables(ds_ref):
+            if item.table_id == bq_ref.table_id:
+                return (getattr(item, "table_type", None) or "TABLE").strip()
+    except gcp_exceptions.NotFound as e:
+        raise SystemExit(
+            f"BigQuery: proyecto o dataset no encontrado para {fq}. "
+            "Revisá el secret BIGQUERY_PROJECT_ID (debe ser el **ID** de GCP, p. ej. agro-protect-490822, no el nombre). "
+            "Si EXPORT_TABLE_MAP usa project.dataset.table, el proyecto debe existir y la SA de export tener acceso. "
+            "Para exportar solo stg/analytics sin mapa, borrá EXPORT_TABLE_MAP y EXPORT_BQ_TABLE_REF (modo auto). "
+            f"Detalle: {e}"
+        ) from e
+    except gcp_exceptions.GoogleAPICallError as e:
+        raise SystemExit(
+            f"No se pudo listar tablas de {bq_ref.project}.{bq_ref.dataset_id}: {e}. "
+            "Revisá IAM de la SA de export (BigQuery Data Viewer / metadata) en ese proyecto."
+        ) from e
+    try:
+        meta = client.get_table(bq_ref)
+        return (meta.table_type or "TABLE").strip()
+    except gcp_exceptions.NotFound as e:
+        raise SystemExit(
+            f"Tabla no encontrada: {fq}. Ajustá EXPORT_TABLE_MAP (en prod suele ser stg.stg_agro_*). "
+            f"Detalle: {e}"
+        ) from e
+
+
 def _resolve_extract_location(client: bigquery.Client, ref: bigquery.TableReference) -> str:
     for key in ("EXPORT_BIGQUERY_LOCATION", "BIGQUERY_LOCATION"):
         v = (os.environ.get(key) or "").strip()
@@ -393,8 +424,7 @@ def export_explicit(
 
         bq_ref = _table_ref_from_fq(fq)
         loc = _resolve_extract_location(client, bq_ref)
-        meta = client.get_table(bq_ref)
-        ttype = (meta.table_type or "TABLE").strip()
+        ttype = _table_type_for_ref(client, bq_ref)
 
         _export_relation_ndjson(client, ttype, bq_ref, dest_uri, project, loc, job_config)
         gcs_objects = _blobs_for_prefix(storage_client, bucket, prefix, base)

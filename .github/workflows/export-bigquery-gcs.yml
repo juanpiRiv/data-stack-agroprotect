@@ -99,6 +99,30 @@ jobs:
           echo "GOOGLE_CLOUD_PROJECT=${BQP}" >> "${GITHUB_ENV}"
           echo "GOOGLE_CLOUD_QUOTA_PROJECT=${BQP}" >> "${GITHUB_ENV}"
 
+      # Si BIGQUERY_PROJECT_ID (secret) no coincide con el proyecto donde la SA tiene BQ, tables.get → 404 Project not found.
+      - name: Set up gcloud (verificar / alinear proyecto)
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Authenticate gcloud and align BIGQUERY_PROJECT_ID
+        run: |
+          set -euo pipefail
+          gcloud auth activate-service-account --key-file="${GOOGLE_APPLICATION_CREDENTIALS}"
+          BQP="$(printf '%s' "${BIGQUERY_PROJECT_ID}" | xargs)"
+          KEY_PID="$(jq -r '.project_id // empty' "${GOOGLE_APPLICATION_CREDENTIALS}" | xargs)"
+          if bq ls --project_id="${BQP}" "${BQP}:" >/dev/null 2>&1; then
+            echo "::notice::BIGQUERY_PROJECT_ID=${BQP} OK (bq ls)."
+          elif [ -n "${KEY_PID}" ] && bq ls --project_id="${KEY_PID}" "${KEY_PID}:" >/dev/null 2>&1; then
+            echo "::warning::BIGQUERY_PROJECT_ID (${BQP}) no accesible con esta SA; usando project_id del JSON de export (${KEY_PID})."
+            BQP="${KEY_PID}"
+            echo "BIGQUERY_PROJECT_ID=${BQP}" >> "${GITHUB_ENV}"
+            echo "GOOGLE_CLOUD_PROJECT=${BQP}" >> "${GITHUB_ENV}"
+            echo "GOOGLE_CLOUD_QUOTA_PROJECT=${BQP}" >> "${GITHUB_ENV}"
+          else
+            echo "::error::La SA de export no puede ejecutar bq ls en BIGQUERY_PROJECT_ID ni en project_id de la key. Revisá IAM (BigQuery) y que el secret sea el ID de proyecto correcto."
+            exit 1
+          fi
+          gcloud config set project "${BQP}" --quiet
+
       - name: dbt credentials for parse (manifest.json)
         env:
           DBT_SA_B64: ${{ secrets.DBT_GOOGLE_APPLICATION_CREDENTIALS }}
