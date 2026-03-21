@@ -1,0 +1,246 @@
+version: 2
+
+models:
+  - name: stg_clima_diario_nasa
+    description: >
+      Cleaned and transformed daily NASA POWER climate data for agricultural risk assessment.
+      Handles deduplication, variable renaming, derived metric calculation, and data quality flagging.
+      Prepared for joining with tax and productivity data for multi-domain risk index.
+
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - location_id
+              - date
+
+    columns:
+      # Location identifiers
+      - name: location_id
+        description: Unique identifier for the location/weather station
+        tests:
+          - not_null
+
+      - name: location_name
+        description: Human-readable name of the location
+
+      - name: province_name
+        description: Province or region name
+
+      - name: latitude
+        description: Latitude coordinate of location
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "latitude >= -90 and latitude <= 90"
+
+      - name: longitude
+        description: Longitude coordinate of location
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "longitude >= -180 and longitude <= 180"
+
+      # Time dimensions
+      - name: date
+        description: Date of the observation
+        tests:
+          - not_null
+
+      - name: year
+        description: Calendar year extracted from date
+
+      - name: month
+        description: Calendar month (1-12) extracted from date
+
+      - name: quarter
+        description: Calendar quarter (1-4) extracted from date
+
+      - name: week_start
+        description: Start date of the week (Monday) for timeseries aggregation
+
+      - name: month_start
+        description: Start date of the month for timeseries aggregation
+
+      # Core weather variables
+      - name: t2m_max
+        description: Maximum temperature at 2m height (°C)
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "t2m_max >= -60 and t2m_max <= 60"
+              config:
+                where: "t2m_max is not null"
+
+      - name: t2m_min
+        description: Minimum temperature at 2m height (°C)
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "t2m_min >= -60 and t2m_min <= 60"
+              config:
+                where: "t2m_min is not null"
+
+      - name: t2m
+        description: Mean temperature at 2m height (°C)
+
+      - name: t2m_dew
+        description: Dew point temperature at 2m height (°C)
+
+      - name: t2m_wet
+        description: Wet bulb temperature at 2m height (°C)
+
+      - name: soil_temperature
+        description: Soil surface temperature (°C)
+
+      - name: precipitation_corrected
+        description: Bias-corrected precipitation (mm/day)
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "precipitation_corrected >= 0 and precipitation_corrected <= 400"
+              config:
+                where: "precipitation_corrected is not null"
+
+      - name: relative_humidity_2m
+        description: Relative humidity at 2m height (%)
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "relative_humidity_2m >= 0 and relative_humidity_2m <= 100"
+              config:
+                where: "relative_humidity_2m is not null"
+
+      - name: specific_humidity_2m
+        description: Specific humidity at 2m height (kg/kg)
+
+      - name: solar_radiation_allsky
+        description: All-sky surface shortwave downward radiation (MJ/m²/day)
+
+      - name: solar_radiation_clearsky
+        description: Clear-sky surface shortwave downward radiation (MJ/m²/day)
+
+      - name: wind_speed_2m
+        description: Wind speed at 2m height (m/s)
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "wind_speed_2m >= 0 and wind_speed_2m <= 50"
+              config:
+                where: "wind_speed_2m is not null"
+
+      - name: wind_speed_2m_max
+        description: Maximum wind speed at 2m height (m/s)
+
+      - name: wind_direction_2m
+        description: Wind direction at 2m height (degrees from north, 0-360)
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: "wind_direction_2m >= 0 and wind_direction_2m <= 360"
+              config:
+                where: "wind_direction_2m is not null"
+
+      - name: surface_pressure
+        description: Surface atmospheric pressure (kPa)
+
+      - name: cloud_amount
+        description: Cloud amount (% of sky covered)
+
+      # Derived agronomic metrics
+      - name: heat_index
+        description: >
+          Heat index (apparent temperature) calculated from T2M and relative humidity.
+          Uses Steadman formula. Only calculated for T > 26.7°C, else equals T2M.
+
+      - name: wind_chill
+        description: >
+          Wind chill temperature (apparent cold) calculated from T2M and wind speed.
+          Only calculated for T < 10°C, else equals T2M.
+
+      - name: vapor_pressure_deficit
+        description: >
+          Vapor pressure deficit (kPa) - difference between saturation and actual vapor pressure.
+          Indicates plant water stress. Higher values = drier conditions.
+
+      - name: growing_degree_days_10c
+        description: >
+          Growing degree days (base 10°C). Accumulated heat units for crop development.
+          Calculated as: max(0, (T_max + T_min)/2 - 10)
+
+      # Agricultural risk indicators (0 = no risk, 1 = risk detected, NULL = insufficient data)
+      - name: frost_risk
+        description: >
+          Binary flag: 1 if minimum temperature < 0°C (frost detected), 0 if >= 0°C.
+          Relevant for crop damage, frost-sensitive crops.
+
+      - name: frost_severity_degrees
+        description: >
+          Absolute value of minimum temperature deviation below 0°C.
+          0 if no frost, NULL if T_min is unknown. Used for assessing frost damage severity.
+
+      - name: heat_stress_risk
+        description: >
+          Binary flag: 1 if maximum temperature > 35°C (heat stress risk), 0 if <= 35°C.
+          Indicates risk of crop heat damage or reduced productivity.
+
+      - name: drought_stress_risk
+        description: >
+          Binary flag: 1 if relative humidity < 30% (drought stress), 0 if >= 30%.
+          Indicates risk of water stress for plants even if no precipitation anomaly.
+
+      - name: fungal_disease_risk
+        description: >
+          Binary flag: 1 if relative humidity > 80% AND temperature > 15°C, else 0.
+          Indicates conditions favorable for fungal disease (mildew, blight, etc).
+
+      - name: excessive_moisture_risk
+        description: >
+          Binary flag: 1 if daily precipitation > 25mm, 0 otherwise.
+          Indicates risk of waterlogging, soil compaction, crop damage from excessive water.
+
+      # Data quality flags
+      - name: critical_null_count
+        description: >
+          Count of missing critical weather variables (T2M, T2M_MIN, T2M_MAX, PRECTOTCORR).
+          Use to identify partial records.
+
+      - name: has_high_missing_data
+        description: >
+          Binary flag: 1 if > 50% of key weather variables are missing, 0 otherwise.
+          Indicates record should be excluded from risk calculations or treated with caution.
+
+      - name: temperature_inconsistent
+        description: >
+          Binary flag: 1 if T_min > T_max (logical inconsistency), 0 otherwise.
+          Indicates data quality issue in raw NASA data.
+
+      - name: temperature_outlier
+        description: >
+          Binary flag: 1 if absolute temperature is extreme (> 50°C or < -50°C), 0 otherwise.
+          Likely indicates data error or sensor malfunction.
+
+      - name: precipitation_outlier
+        description: >
+          Binary flag: 1 if daily precipitation > 400mm (extreme event), 0 otherwise.
+          May be real (tropical storm) or data error - requires manual review.
+
+      # Metadata
+      - name: x_source
+        description: Source identifier (e.g., 'NASA POWER API')
+
+      - name: x_source_type
+        description: Type of source (e.g., 'satellite', 'model')
+
+      - name: loaded_at
+        description: Timestamp when record was loaded to warehouse
+
+      - name: _sdc_extracted_at
+        description: Stitch metadata - extraction timestamp
+
+      - name: _sdc_received_at
+        description: Stitch metadata - reception timestamp
+
+      - name: _sdc_batched_at
+        description: Stitch metadata - batch timestamp
+
+      - name: _sdc_deleted_at
+        description: Stitch metadata - deletion marker timestamp
+
+      - name: _sdc_sequence
+        description: Stitch metadata - sequence number for ordering
+
+      - name: _sdc_table_version
+        description: Stitch metadata - table schema version
