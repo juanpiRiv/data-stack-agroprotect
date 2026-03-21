@@ -132,7 +132,8 @@ jobs:
             echo "::error::La SA de dbt no puede ejecutar bq ls en BIGQUERY_PROJECT_ID ni en project_id de la key. Revisá IAM (BigQuery) y que el secret sea el **ID** de proyecto GCP (Configuración → ID del proyecto), no el nombre."
             exit 1
           fi
-          gcloud config set project "${BQP}" --quiet
+          # Evitar `gcloud config set project`: puede llamar Cloud Resource Manager API (a menudo deshabilitada para SAs).
+          echo "CLOUDSDK_CORE_PROJECT=${BQP}" >> "${GITHUB_ENV}"
 
       # dbt-bigquery usa location del perfil para jobs; si stg está en southamerica-east1 y el secret dice US →
       # "Dataset stg was not found in location".
@@ -143,12 +144,20 @@ jobs:
           SCHEMA_MAIN="$(printf '%s' "${BIGQUERY_DATASET_ID:-analytics}" | xargs)"
           SCHEMA_MAIN="${SCHEMA_MAIN:-analytics}"
 
+          # bq a veces devuelve texto de error en stdout; jq rompe con "parse error" si no es JSON.
           ds_location() {
             local ds="$1"
-            local info
+            local info loc
             info=$(bq show --format=json --project_id="${PROJECT}" "${PROJECT}:${ds}" 2>/dev/null || true)
+            info="${info#"${info%%[![:space:]]*}"}"
+            info="${info%"${info##*[![:space:]]}"}"
             [ -z "${info}" ] && echo "" && return
-            echo "${info}" | jq -r '.location // empty'
+            case "${info}" in
+              \{*) ;;
+              *) echo "" && return ;;
+            esac
+            loc=$(printf '%s' "${info}" | python3 -c "import json,sys; print(json.load(sys.stdin).get('location') or '')" 2>/dev/null || true)
+            printf '%s' "${loc}"
           }
 
           norm_upper() { printf '%s' "$1" | tr '[:lower:]' '[:upper:]'; }
@@ -216,7 +225,7 @@ jobs:
         if: env.DBT_MANIFEST_GCS_URI != ''
         working-directory: agro-protect/transform
         run: |
-          gcloud storage cp target/manifest.json "${DBT_MANIFEST_GCS_URI}"
+          gcloud --project="${BIGQUERY_PROJECT_ID}" storage cp target/manifest.json "${DBT_MANIFEST_GCS_URI}"
 
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v4
