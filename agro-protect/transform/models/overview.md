@@ -1,33 +1,33 @@
 {% docs __overview__ %}
-# AgroProtect · data stack en BigQuery
-Extracción con Meltano (tap **por definir** para datos agro) y modelado con dbt.
+# AgroProtect · BigQuery data stack
+Extraction with Meltano (**tap-agro** for agro weather) and modeling with dbt.
 
-## Cómo orientarte
-- Las tablas raw las crea Meltano en `<env>_<namespace_del_tap>` cuando configures el extractor.
-- Los modelos `stg_*` / marts actuales siguen ligados a fuentes legacy `tap_github` hasta la migración.
-- Staging en dataset `stg`; marts en `marts` (prod/ci) o `SANDBOX_<DBT_USER>` en dev.
+## How to navigate
+- Meltano creates raw tables in `<env>_<tap_namespace>`.
+- Current `stg_*` / marts may still reference legacy `tap_github` until fully migrated.
+- Staging dataset `stg`; marts in `marts` (prod/ci) or `SANDBOX_<DBT_USER>` in dev.
 
-## Cómo ejecutar en local
+## Running locally
 1) `set -a; source ../.env; set +a`
-2) Con tap configurado: `meltano --environment=prod run <tap> target-bigquery` desde `extraction/`
-3) Desde `transform/`: `./scripts/setup-local.sh`, `dbt deps`, `dbt build --target prod` (requiere raw alineado con `sources`)
+2) With tap configured: `meltano --environment=prod run tap-agro target-bigquery` from `extraction/`
+3) From `transform/`: `./scripts/setup-local.sh`, `dbt deps`, `dbt build --target prod` (requires raw aligned with `sources`)
 
-## Consejos
-- `dbt build` sobre `run`; define `DBT_USER` en dev.
-- Tras cambiar el tap, actualiza `sources`, macro `ensure_source_datasets` y modelos staging.
+## Tips
+- Prefer `dbt build` over `dbt run`; set `DBT_USER` in dev.
+- After changing the tap, update `sources`, macro `ensure_source_datasets`, and staging models.
 {% enddocs %}
 
 {% docs __agroprotect__ %}
 # AgroProtect · data stack
-Stack BigQuery: Meltano para ingesta y dbt para capas limpias y marts documentados.
+BigQuery stack: Meltano for ingest, dbt for clean layers and documented marts.
 
-## Qué leer después
-- `README.md` y `extraction/README.md` para el extractor.
-- `models/staging/*.yml` para fuentes (hoy legacy GitHub hasta migración agro).
-- `models/production/marts/*.yml` para marts y tests.
+## Read next
+- `README.md` and `extraction/README.md` for the extractor.
+- `models/staging/*.yml` for sources (legacy GitHub until full agro migration).
+- `models/production/marts/*.yml` for marts and tests.
 
-## Flujo de equipo
-- `.env` alineado con GCP y el tap elegido.
-- `dbt build --select <modelo> --target dev` en desarrollo.
-- `dbt docs generate --target prod` para revisión cuando toque.
+## Team flow
+- `.env` aligned with GCP and the chosen tap.
+- `dbt build --select <model> --target dev` in development.
+- `dbt docs generate --target prod` for review when needed.
 {% enddocs %}

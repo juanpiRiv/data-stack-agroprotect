@@ -21,7 +21,7 @@ jobs:
       DBT_USER: ci_pr_${{ github.event.pull_request.number }}
       CI: true
       DBT_CI_PR_NUMBER: ${{ github.event.pull_request.number }}
-      # Slim CI: preferí GCS (mismo objeto que sube dbt-cd-docs). HTTPS/Pages queda como respaldo.
+      # Slim CI: prefer GCS (same object dbt-cd-docs uploads). HTTPS/Pages as fallback.
       DBT_MANIFEST_GCS_URI: ${{ secrets.DBT_MANIFEST_GCS_URI }}
       DBT_MANIFEST_URL: ${{ secrets.DBT_MANIFEST_URL }}
     steps:
@@ -84,7 +84,7 @@ jobs:
         run: |
           echo "${{ steps.changed_sql.outputs.files }}" | sed 's|^agro-protect/||' | xargs -d '\n' sqlfluff lint
 
-      - name: Set up gcloud (manifest desde GCS)
+      - name: Set up gcloud (manifest from GCS)
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ secrets.BIGQUERY_PROJECT_ID }}
@@ -99,28 +99,28 @@ jobs:
           ok=1
           if [[ -n "${DBT_MANIFEST_GCS_URI}" ]]; then
             if gcloud storage cp "${DBT_MANIFEST_GCS_URI}" agro-protect/transform/prod-artifacts/manifest.json; then
-              echo "Manifest desde GCS: ${DBT_MANIFEST_GCS_URI}"
+              echo "Manifest from GCS: ${DBT_MANIFEST_GCS_URI}"
               ok=0
             fi
           elif [[ -n "${DBT_MANIFEST_URL}" ]]; then
             if [[ "${DBT_MANIFEST_URL}" == gs://* ]]; then
               if gcloud storage cp "${DBT_MANIFEST_URL}" agro-protect/transform/prod-artifacts/manifest.json; then
-                echo "Manifest desde GCS (DBT_MANIFEST_URL): ${DBT_MANIFEST_URL}"
+                echo "Manifest from GCS (DBT_MANIFEST_URL): ${DBT_MANIFEST_URL}"
                 ok=0
               fi
             elif curl -fL "${DBT_MANIFEST_URL}" -o agro-protect/transform/prod-artifacts/manifest.json; then
-              echo "Manifest desde URL: ${DBT_MANIFEST_URL}"
+              echo "Manifest from URL: ${DBT_MANIFEST_URL}"
               ok=0
             fi
           else
             FALLBACK="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/manifest.json"
             if curl -fL "${FALLBACK}" -o agro-protect/transform/prod-artifacts/manifest.json; then
-              echo "Manifest desde GitHub Pages: ${FALLBACK}"
+              echo "Manifest from GitHub Pages: ${FALLBACK}"
               ok=0
             fi
           fi
           if [[ "${ok}" -ne 0 ]]; then
-            echo "No se obtuvo manifest; dbt hará build completo."
+            echo "No manifest found; dbt will run a full build."
             rm -f agro-protect/transform/prod-artifacts/manifest.json
           fi
 

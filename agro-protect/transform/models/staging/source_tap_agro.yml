@@ -1,14 +1,14 @@
 version: 2
 
-# Raw cargado por Meltano: tap-agro → target-bigquery → dataset {{ target.name }}_tap_agro
-# Las tablas tienen columna Singer `data` (STRUCT) con los campos del stream; los stg_* hacen * EXCEPT(data), data.*
+# Raw loaded by Meltano: tap-agro → target-bigquery → dataset {{ target.name }}_tap_agro
+# Tables use Singer column `data` (STRUCT); stg_* models use * EXCEPT(data), data.*
 
 sources:
   - name: tap_agro
-    description: Raw meteorología y dimensiones (tap-meteorology / NASA POWER)
+    description: Raw weather and dimensions (tap-meteorology / NASA POWER)
     schema: "{{ target.name }}_tap_agro"
     tables:
       - name: locations
-        description: Catálogo de localidades sincronizado desde el tap
+        description: Location catalog synced from the tap
       - name: clima_diario_nasa_power
-        description: Serie diaria NASA POWER por localidad (replication_key date)
+        description: Daily NASA POWER series per location (replication_key date)

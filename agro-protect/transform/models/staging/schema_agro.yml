@@ -2,23 +2,23 @@ version: 2
 
 models:
   - name: stg_agro_locations
-    description: Localidades del catálogo tap-agro (desde raw locations)
+    description: Locations from tap-agro catalog (from raw locations)
     columns:
       - name: location_id
-        description: Identificador estable de la localidad
+        description: Stable location identifier
       - name: location_name
-        description: Nombre legible
+        description: Human-readable name
       - name: latitude
-        description: Latitud (WGS84)
+        description: Latitude (WGS84)
       - name: longitude
-        description: Longitud (WGS84)
+        description: Longitude (WGS84)
 
   - name: stg_agro_clima_diario_nasa_power
-    description: Clima diario NASA POWER por localidad (raw aplanado)
+    description: Daily NASA POWER weather per location (flattened raw)
     columns:
       - name: location_id
-        description: FK lógica a locations
+        description: Logical FK to locations
       - name: date
-        description: Día de observación (DATE)
+        description: Observation day (DATE)
       - name: x_source
-        description: Proveedor de datos (p. ej. nasa_power)
+        description: Data provider (e.g. nasa_power)

@@ -1,18 +1,18 @@
-# Por defecto prod = ayer (`days_back: 1`). Sin fechas fijas en el bloque base del tap.
+# Default prod = yesterday (`days_back: 1`). No fixed dates in the tap base block.
 default_environment: prod
 
 project_id: agro-protect
 
-# tap-agro → https://github.com/juanpiRiv/tap-meteorology (clima diario NASA POWER).
-# `days_back` pisa start_date/end_date: 1 = ayer en `timezone`.
-#   prod: `days_back: 1`. dev/ci: ventana corta con `days_back` (pruebas locales/CI).
-#   yaml_window: solo para dispatch elt_meltano_yml en Actions (fechas acotadas; sin años en el bloque base).
-# Histórico: ./scripts/run_tap_agro_bq_yearly.sh (setea start_date/end_date por corrida).
+# tap-agro → https://github.com/juanpiRiv/tap-meteorology (daily NASA POWER weather).
+# `days_back` overrides start_date/end_date: 1 = yesterday in `timezone`.
+#   prod: `days_back: 1`. dev/ci: short window with `days_back` (local/CI tests).
+#   yaml_window: only for elt_meltano_yml dispatch in Actions (bounded dates; no multi-year block in base YAML).
+# Historical: ./scripts/run_tap_agro_bq_yearly.sh (sets start_date/end_date per run).
 #
-# Histórico automático año a año: ./scripts/run_tap_agro_bq_yearly.sh (TZ AR por defecto).
+# Year-by-year backfill: ./scripts/run_tap_agro_bq_yearly.sh (AR TZ by default).
 #
-# BigQuery: method batch_job. project/location/credentials salen del entorno (source ../.env).
-# Dataset: {MELTANO_ENVIRONMENT}_tap_agro (namespace del extractor).
+# BigQuery: batch_job method. project/location/credentials from env (source ../.env).
+# Dataset: {MELTANO_ENVIRONMENT}_tap_agro (extractor namespace).
 
 plugins:
   extractors:
@@ -21,11 +21,11 @@ plugins:
     pip_url: git+https://github.com/juanpiRiv/tap-meteorology.git@main
     executable: tap-agro
     config:
-      # Sin `location_catalog_path` el tap usa solo sample_rosario (ver tap-meteorology).
-      # Rango de fechas: por entorno (prod/dev/ci/yaml_window) o overrides / run_tap_agro_bq_yearly.sh — no acá.
+      # Without `location_catalog_path` the tap uses only sample_rosario (see tap-meteorology).
+      # Date range: per environment (prod/dev/ci/yaml_window) or overrides / run_tap_agro_bq_yearly.sh — not here.
       timezone: America/Argentina/Buenos_Aires
       location_catalog_path: data/locations.csv
-      # Obligatorio: el tap tiene use_open_meteo=true por defecto; solo NASA en este proyecto.
+      # Required: tap defaults use_open_meteo=true; this project uses NASA only.
       use_open_meteo: false
       request_delay_seconds: 1
     select:
@@ -51,7 +51,7 @@ plugins:
       fail_fast: false
 
 environments:
-# Pruebas locales: últimos 30 días (sin heredar años fijos del YAML).
+# Local tests: last 30 days (no fixed multi-year block inherited from YAML).
 - name: dev
   config:
     plugins:
@@ -68,7 +68,7 @@ environments:
         config:
           use_open_meteo: false
           days_back: 1
-# Ingest diario: ayer en timezone del tap.
+# Daily ingest: yesterday in tap timezone.
 - name: prod
   config:
     plugins:
@@ -78,7 +78,7 @@ environments:
           use_open_meteo: false
           request_delay_seconds: 1
           days_back: 1
-# Solo GitHub Actions → elt_meltano_yml (ventana fija acotada; cambiá fechas si necesitás otra prueba).
+# GitHub Actions only → elt_meltano_yml (bounded fixed window; change dates if you need another test range).
 - name: yaml_window
   config:
     plugins:

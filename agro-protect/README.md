@@ -112,7 +112,7 @@ BIGQUERY_LOCATION=US
 DBT_GOOGLE_APPLICATION_CREDENTIALS=/path/to/dbt-service-account.json
 MELTANO_GOOGLE_APPLICATION_CREDENTIALS=/path/to/meltano-service-account.json
 GOOGLE_APPLICATION_CREDENTIALS=${MELTANO_GOOGLE_APPLICATION_CREDENTIALS}
-# Opcional en local (state en extraction/.meltano/). Si usás GCS: bucket real + facturación activa.
+# Optional locally (state under extraction/.meltano/). For GCS: real bucket + billing enabled.
 # MELTANO_STATE_BACKEND_URI=gs://your-bucket/meltano/state
 
 TARGET_BIGQUERY_PROJECT=${BIGQUERY_PROJECT_ID}
@@ -124,8 +124,8 @@ DBT_USER=local
 
 > [i] INFO: If you prefer a single service account, set both credential paths to
 > the same file.
-> [i] INFO: Si definís `MELTANO_STATE_BACKEND_URI`, `GOOGLE_APPLICATION_CREDENTIALS` debe ser la cuenta que pueda escribir en ese bucket. Sin URI de GCS, el state es local (`.meltano`).
-> [!] WARNING: Cuando tengas tap, ejecuta Meltano en el **mismo entorno** (`dev` / `ci` / `prod`) que el `--target` de dbt para que el dataset raw coincida con `sources`.
+> [i] INFO: If you set `MELTANO_STATE_BACKEND_URI`, `GOOGLE_APPLICATION_CREDENTIALS` must be an account that can write to that bucket. Without a GCS URI, state stays local (`.meltano`).
+> [!] WARNING: Run Meltano in the **same environment** (`dev` / `ci` / `prod`) as dbt’s `--target` so the raw dataset matches `sources`.
 
 5. [LOCAL] Set up the extraction environment
 
@@ -153,10 +153,10 @@ Expected: no errors, and either an empty list or existing states.
 
 ```bash
 set -a; source ../.env; set +a
-meltano --environment=prod run <tu_tap> target-bigquery
+meltano --environment=prod run tap-agro target-bigquery
 ```
 
-> [!] WARNING: El nombre del dataset raw depende del tap; debe coincidir con las `sources` en dbt.
+> [!] WARNING: The raw dataset name depends on the tap; it must match dbt `sources`.
 
 8. [DBT] Run transform and build models
 
@@ -205,8 +205,8 @@ Opens at: http://localhost:8080
 ### Data flow
 
 ```
-Fuente agro (API / archivos / …)
-  -> Meltano (tu tap + target-bigquery)
+Agro source (API / files / …)
+  -> Meltano (your tap + target-bigquery)
   -> BigQuery: dataset <env>_<namespace_tap> (raw)
   -> dbt staging: dataset stg (stg_*)
   -> dbt marts: dataset marts (final models)
@@ -256,14 +256,14 @@ If you do not pass `--target prod`, dbt uses the default target (dev).
 ### Work in your sandbox (dev)
 
 ```bash
-export DBT_USER=tu_usuario
+export DBT_USER=your_username
 cd transform
 set -a; source ../.env; set +a
 export DBT_PROFILES_DIR=.
 dbt build
 ```
 
-> [i] INFO: Los datos raw quedan en el dataset del tap; en dev los modelos van a `SANDBOX_<DBT_USER>`.
+> [i] INFO: Raw data stays in the tap’s dataset; in dev models go to `SANDBOX_<DBT_USER>`.
 > [i] INFO: If you modify models or YAML, run `dbt build` again.
 
 ### Add a new model
@@ -273,7 +273,7 @@ dbt build
 3. Run a selective build.
 
 ```bash
-dbt build --select <nombre_del_modelo>
+dbt build --select <model_name>
 ```
 
 ### Change the data source
@@ -308,18 +308,18 @@ They assume `working-directory: agro-protect` for installs and run Meltano/dbt u
 - `DBT_GOOGLE_APPLICATION_CREDENTIALS` (base64-encoded JSON key)
 - `MELTANO_GOOGLE_APPLICATION_CREDENTIALS` (base64-encoded JSON key)
 - `DBT_USER` (for sandbox datasets)
-- **`DBT_MANIFEST_GCS_URI`** (recomendado): `gs://bucket/ruta/manifest.json` — manifest de prod para slim CI; el CD lo sube y el PR lo baja
-- `DBT_MANIFEST_URL` (opcional): URL **https** o `gs://…` si no usás el secret anterior; si no hay ninguno, se intenta el `manifest.json` publicado en GitHub Pages
-- `MELTANO_STATE_BACKEND_URI` (opcional) — `gs://…` con proyecto/bucket con **facturación activa**; si falta, el runner puede usar state en `.meltano` (menos ideal en CI compartido)
+- **`DBT_MANIFEST_GCS_URI`** (recommended): `gs://bucket/path/manifest.json` — prod manifest for slim CI; CD uploads it and PR jobs download it
+- `DBT_MANIFEST_URL` (optional): **https** or `gs://…` if you do not use the secret above; if neither is set, the workflow tries `manifest.json` from GitHub Pages
+- `MELTANO_STATE_BACKEND_URI` (optional) — `gs://…` on a project/bucket with **billing enabled**; if missing, the runner may use state under `.meltano` (less ideal on shared CI)
 - `TARGET_BIGQUERY_PROJECT` if different from `BIGQUERY_PROJECT_ID`
 - `TARGET_BIGQUERY_LOCATION` if different from `BIGQUERY_LOCATION`
 
 **Export a GCS (workflow `export-bigquery-gcs`):**
 
-- `EXPORT_GOOGLE_APPLICATION_CREDENTIALS` (base64) — SA solo para export (lectura BQ + escritura en el bucket)
+- `EXPORT_GOOGLE_APPLICATION_CREDENTIALS` (base64) — SA dedicated to export (BQ read + bucket write)
 - `EXPORT_GCS_BUCKET_NAME`
-- `EXPORT_TABLE_MAP` (JSON una línea) **o** `EXPORT_BQ_TABLE_REF` (+ opcional `EXPORT_GCS_BLOB_NAME`)
-- Opcional: `EXPORT_GCS_PREFIX` (si no existe, el script usa `prod/exports`)
+- `EXPORT_TABLE_MAP` (single-line JSON) **or** `EXPORT_BQ_TABLE_REF` (+ optional `EXPORT_GCS_BLOB_NAME`)
+- Optional: `EXPORT_GCS_PREFIX` (if unset, the script defaults to `prod/exports`)
 
 Encode the JSON key before saving to GitHub Secrets:
 
@@ -329,19 +329,19 @@ base64 -i /path/to/service-account.json | tr -d '\n'
 
 ### Workflows
 
-- `data-pipeline.yml`: **`meltano run tap-agro target-bigquery`** (extract y luego load a BigQuery). **Cron diario** = ayer (AR) → `prod`. **Dispatch manual** por defecto igual; o `meltano.yml` / solo validación. Histórico ~10 años: script en `extraction/scripts/`. Cómo correr en local: **`extraction/README.md`**.
-- `export-bigquery-gcs.yml`: **export BQ → GCS** (NDJSON) vía `agro-protect/scripts/export_to_gcs.py`. Cron cada **6 h** + dispatch manual + push a `main` si cambia el script. Secrets: `EXPORT_GOOGLE_APPLICATION_CREDENTIALS` (base64), `EXPORT_GCS_BUCKET_NAME`, `EXPORT_TABLE_MAP` o `EXPORT_BQ_TABLE_REF`; detalle en **`scripts/README.md`**.
-- `dbt-pr-ci.yml`: on PR. `dbt build` en sandbox + SQLFluff (fallará si no hay raw alineado con `sources`).
+- `data-pipeline.yml`: **`meltano run tap-agro target-bigquery`** (extract then load to BigQuery). **Daily cron** = yesterday (ART) → `prod`. **Manual dispatch** defaults the same; or fixed window from `meltano.yml` / validate-only. ~10y history: script under `extraction/scripts/`. Local run: **`extraction/README.md`**.
+- `export-bigquery-gcs.yml`: **export BQ → GCS** (NDJSON) via `agro-protect/scripts/export_to_gcs.py`. **Every 6 h** cron + manual + push to `main` when the script changes. Secrets: `EXPORT_GOOGLE_APPLICATION_CREDENTIALS` (base64), `EXPORT_GCS_BUCKET_NAME`, `EXPORT_TABLE_MAP` or `EXPORT_BQ_TABLE_REF`; details in **`scripts/README.md`**.
+- `dbt-pr-ci.yml`: on PR. `dbt build` in sandbox + SQLFluff (fails if raw data is not aligned with `sources`).
 - `dbt-cd-docs.yml`: push a `main`. `dbt build` + docs en Pages.
 
-> [i] INFO: Los workflows de dbt usan `dbt build` cuando corre el job.
+> [i] INFO: dbt workflows use `dbt build` when the job runs.
 
 ### Slim CI (prod manifest)
 
-- Orden de búsqueda del manifest en PR: **`DBT_MANIFEST_GCS_URI`** → `DBT_MANIFEST_URL` (https o `gs://`) → GitHub Pages.
-- Con `state:modified+` y `--defer`, dbt compila/ejecuta solo lo cambiado y apoya el resto en prod.
-- Sin manifest válido, el job hace **build completo** (más lento pero seguro).
-- El manifest en GCS se **actualiza** en **`dbt-cd-docs`** al terminar `dbt docs generate` (mismo `manifest.json` que genera dbt en `target/`).
+- PR manifest lookup order: **`DBT_MANIFEST_GCS_URI`** → `DBT_MANIFEST_URL` (https or `gs://`) → GitHub Pages.
+- With `state:modified+` and `--defer`, dbt compiles/runs only what changed and defers the rest to prod.
+- Without a valid manifest, the job does a **full build** (slower but safe).
+- The GCS manifest is **updated** in **`dbt-cd-docs`** after `dbt docs generate` (same `manifest.json` dbt writes under `target/`).
 
 ### SQLFluff
 
@@ -386,7 +386,7 @@ Error: Source dataset not found
 Run extraction in the same environment as your dbt target (prod example):
 
 ```bash
-meltano --environment=prod run <tu_tap> target-bigquery
+meltano --environment=prod run tap-agro target-bigquery
 ```
 
 Need a full reload (clear Meltano state)
@@ -395,7 +395,7 @@ If you want to reimport everything, clear the saved state first:
 
 ```bash
 meltano --environment=prod state list
-meltano --environment=prod state clear "<state_id_del_job>" --force
+meltano --environment=prod state clear "<state_id>" --force
 ```
 
 To clear all state IDs:
@@ -415,7 +415,7 @@ set -a; source .env; set +a
 Error: DBT_USER environment variable not set
 
 ```bash
-export DBT_USER=tu_usuario
+export DBT_USER=your_username
 ```
 
 </details>

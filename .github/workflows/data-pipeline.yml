@@ -1,9 +1,9 @@
 name: data-pipeline
 
-# Un solo flujo ELT: tap-agro (extract) → target-bigquery (load a GCP) en el mismo `meltano run`.
+# Single ELT flow: tap-agro (extract) → target-bigquery (load to GCP) in one `meltano run`.
 #
-# - schedule / elt_daily_yesterday: meltano config set tap-agro days_back 1 (ayer en timezone del tap; ver tap-meteorology).
-# - elt_meltano_yml: entorno yaml_window (start_date/end_date acotados en meltano.yml; sin days_back).
+# - schedule / elt_daily_yesterday: meltano config set tap-agro days_back 1 (yesterday in tap timezone; see tap-meteorology).
+# - elt_meltano_yml: yaml_window env (start_date/end_date in meltano.yml; no days_back).
 
 on:
   schedule:
@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       elt_mode:
-        description: "Modo al disparar a mano"
+        description: "Manual run mode"
         required: true
         type: choice
         default: elt_daily_yesterday
@@ -21,7 +21,7 @@ on:
           - elt_meltano_yml
           - validate_only
       meltano_env:
-        description: "Entorno Meltano (dataset {env}_tap_agro); schedule → prod. elt_meltano_yml → siempre yaml_window (este campo no aplica)."
+        description: "Meltano env (dataset {env}_tap_agro); schedule → prod. elt_meltano_yml → always yaml_window (ignored for that mode)."
         required: true
         default: prod
         type: choice
@@ -102,10 +102,10 @@ jobs:
           fi
 
           if [ "$USE_YESTERDAY" = "1" ]; then
-            echo "ELT: extract → load | tap-agro days_back=1 (ayer en timezone del tap, p. ej. America/Argentina/Buenos_Aires)"
+            echo "ELT: extract → load | tap-agro days_back=1 (yesterday in tap TZ, e.g. America/Argentina/Buenos_Aires)"
             meltano --environment="${MELTANO_ENV}" config set tap-agro days_back 1
           else
-            echo "ELT: extract → load | elt_meltano_yml (entorno yaml_window: fechas en meltano.yml)"
+            echo "ELT: extract → load | date window from meltano.yml (yaml_window; days_back unset)"
             meltano --environment="${MELTANO_ENV}" config unset tap-agro days_back || true
           fi
 

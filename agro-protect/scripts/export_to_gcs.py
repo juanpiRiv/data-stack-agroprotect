@@ -20,15 +20,15 @@ def _table_map() -> dict[str, str]:
         try:
             parsed = json.loads(raw)
         except json.JSONDecodeError as e:
-            raise SystemExit(f"EXPORT_TABLE_MAP no es JSON válido: {e}") from e
+            raise SystemExit(f"EXPORT_TABLE_MAP is not valid JSON: {e}") from e
         if not isinstance(parsed, dict) or not parsed:
-            raise SystemExit("EXPORT_TABLE_MAP debe ser un objeto JSON no vacío {blob_key: dataset.table}.")
+            raise SystemExit("EXPORT_TABLE_MAP must be a non-empty JSON object {blob_key: dataset.table}.")
         return {str(k): str(v) for k, v in parsed.items()}
 
     ref = os.environ.get("EXPORT_BQ_TABLE_REF", "").strip()
     if not ref:
         raise SystemExit(
-            "Definí EXPORT_TABLE_MAP (JSON) o EXPORT_BQ_TABLE_REF (dataset.tabla o proyecto.dataset.tabla)."
+            "Set EXPORT_TABLE_MAP (JSON) or EXPORT_BQ_TABLE_REF (dataset.table or project.dataset.table)."
         )
     blob = (os.environ.get("EXPORT_GCS_BLOB_NAME", "").strip() or ref.split(".")[-1]).replace(".json", "")
     return {blob: ref}
@@ -41,13 +41,13 @@ def _fully_qualified_table(ref: str) -> str:
     if len(parts) == 2:
         proj = _project_id()
         if not proj:
-            raise SystemExit("Con dataset.tabla hace falta BIGQUERY_PROJECT_ID o EXPORT_BQ_PROJECT_ID.")
+            raise SystemExit("For dataset.table you need BIGQUERY_PROJECT_ID or EXPORT_BQ_PROJECT_ID.")
         return f"{proj}.{parts[0]}.{parts[1]}"
-    raise SystemExit(f"Referencia de tabla inválida (usa dataset.tabla o proyecto.dataset.tabla): {ref!r}")
+    raise SystemExit(f"Invalid table reference (use dataset.table or project.dataset.table): {ref!r}")
 
 
 def _gcs_prefix() -> str:
-    # Vacío o ausente → default (GitHub Actions suele inyectar el secret aunque esté vacío).
+    # Empty or missing → default (GitHub Actions may inject the secret even when empty).
     raw = (os.environ.get("EXPORT_GCS_PREFIX") or "").strip()
     p = (raw or "prod/exports").strip("/")
     return f"{p}/" if p else ""
@@ -56,11 +56,11 @@ def _gcs_prefix() -> str:
 def main() -> None:
     bucket = os.environ.get("EXPORT_GCS_BUCKET_NAME", "").strip()
     if not bucket:
-        raise SystemExit("EXPORT_GCS_BUCKET_NAME es obligatorio.")
+        raise SystemExit("EXPORT_GCS_BUCKET_NAME is required.")
 
     creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
     if not creds or not os.path.isfile(creds):
-        raise SystemExit("GOOGLE_APPLICATION_CREDENTIALS debe apuntar a un archivo JSON de cuenta de servicio.")
+        raise SystemExit("GOOGLE_APPLICATION_CREDENTIALS must point to a service account JSON file.")
 
     project = _project_id()
     client = bigquery.Client(project=project) if project else bigquery.Client()

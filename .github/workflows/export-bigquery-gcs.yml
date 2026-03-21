@@ -1,11 +1,11 @@
-# Exporta tablas/vistas de BigQuery al bucket GCS (NDJSON) para consumo desde un front.
-# Requiere la cuenta de servicio del export (no reutilices la de Meltano salvo que tenga los mismos permisos).
+# Export BigQuery tables/views to a GCS bucket (NDJSON) for frontend or downstream use.
+# Use the export service account (do not reuse Meltano's SA unless it has the same permissions).
 #
-# Secrets: EXPORT_GOOGLE_APPLICATION_CREDENTIALS (JSON en base64, sin saltos de línea),
+# Secrets: EXPORT_GOOGLE_APPLICATION_CREDENTIALS (JSON base64, single line),
 #          BIGQUERY_PROJECT_ID, EXPORT_GCS_BUCKET_NAME,
-#          y EXPORT_TABLE_MAP *o* EXPORT_BQ_TABLE_REF (+ opcional EXPORT_GCS_BLOB_NAME).
+#          and EXPORT_TABLE_MAP *or* EXPORT_BQ_TABLE_REF (+ optional EXPORT_GCS_BLOB_NAME).
 #
-# Opcional: EXPORT_GCS_PREFIX (default prod/exports vía env en el job).
+# Optional: EXPORT_GCS_PREFIX (default prod/exports via job env).
 
 name: export-bigquery-gcs
 
