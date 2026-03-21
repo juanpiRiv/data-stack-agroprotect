@@ -31,6 +31,7 @@ source tap_agro.clima_diario_nasa_power
   -> int_weather__daily_metrics
   -> int_weather__daily_quality
   -> fct_weather_daily
+  -> app_location_snapshot
 
 seed tax_province
   -> stg_seed__tax_province
@@ -47,6 +48,9 @@ int_location__current + int_tax__province + int_yield__province_campaign
 
 fct_weather_daily + fct_tax_province + fct_yield_province_campaign
   -> mart_agro_province_campaign
+
+dim_location + fct_weather_daily
+  -> app_location_snapshot
 ```
 
 ## Llaves y convenciones
@@ -306,6 +310,21 @@ fct_weather_daily + fct_tax_province + fct_yield_province_campaign
     - `frost_days`, `heat_days`, `heavy_rain_days`, `dry_days`, `fungal_risk_days`
   - luego hace left join contra yield y tax.
   - deriva `usable_weather_day_ratio` para medir cobertura climatica util.
+
+### `app_location_snapshot`
+
+- Grano: una fila por `location_id`.
+- Input: `ref('dim_location')` + `ref('fct_weather_daily')`.
+- Que trae:
+  - un snapshot listo para frontend con la mejor fila meteorologica disponible por ubicacion.
+  - metadata lista para mapa: nombre, provincia, latitud, longitud y estado del nodo.
+  - metricas climaticas minimas, flags de calidad y senales climaticas app-friendly.
+- Como se calcula:
+  - rankea `fct_weather_daily` por ubicacion para priorizar filas `is_quality_approved = true` y no parciales.
+  - usa el orden `date`, `record_loaded_at`, `_sdc_received_at`, `_sdc_extracted_at`, `_sdc_sequence` para desempatar.
+  - hace fallback al ultimo registro disponible si no existe una fila usable.
+  - enriquece el snapshot con metadata de `dim_location`.
+  - deriva `climate_rain_signal`, `climate_water_stress_signal`, `climate_temperature_signal` y `climate_index_total`.
 
 ## Modelos legacy
 
