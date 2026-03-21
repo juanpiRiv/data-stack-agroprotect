@@ -204,6 +204,28 @@ jobs:
             echo "BIGQUERY_LOCATION=${DS_LOC}" >> "${GITHUB_ENV}"
           fi
 
+      # Igual que macros/generate_schema_name.sql (dev sin --defer → SANDBOX_<DBT_USER>).
+      # run_query en on-run-start no garantiza crear el dataset en CI; bq mk es explícito.
+      - name: Ensure dbt PR datasets (SANDBOX_* + stg)
+        run: |
+          set -euo pipefail
+          PROJECT="${DBT_TAP_RESOLVED_PROJECT:-${BIGQUERY_PROJECT_ID}}"
+          LOC="${BIGQUERY_LOCATION}"
+          raw="${DBT_USER:-default_user}"
+          user="${raw%%@*}"
+          user="${user//./_}"
+          user="${user//-/_}"
+          uu=$(printf '%s' "$user" | tr '[:lower:]' '[:upper:]')
+          SANDBOX="SANDBOX_${uu}"
+          for id in "${SANDBOX}" stg; do
+            if bq show --format=none --project_id="${PROJECT}" "${PROJECT}:${id}" >/dev/null 2>&1; then
+              echo "dataset ${PROJECT}.${id} ya existe — skip"
+            else
+              echo "creando ${PROJECT}.${id} (location=${LOC})…"
+              bq --project_id="${PROJECT}" mk --dataset --location="${LOC}" "${PROJECT}:${id}"
+            fi
+          done
+
       - name: Run dbt build in sandbox
         working-directory: agro-protect/transform
         env:
