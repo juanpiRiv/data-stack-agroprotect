@@ -1,0 +1,79 @@
+version: 2
+
+sources:
+  - name: tap_nasa
+    description: NASA POWER climate data for agricultural analysis
+    schema: raw_nasa  # Update to match your actual schema name
+    tables:
+      - name: clima_diario_nasa_power_view
+        description: >
+          Daily climate observations from NASA POWER API (Prediction of Worldwide Energy Resources).
+          Contains global weather data at ~0.5° spatial resolution.
+          Used as input for agricultural risk index calculation.
+        columns:
+          - name: location_id
+            description: Unique location identifier
+          - name: location_name
+            description: Location name
+          - name: province_name
+            description: Province/region name
+          - name: latitude
+            description: Latitude coordinate
+          - name: longitude
+            description: Longitude coordinate
+          - name: date
+            description: Observation date
+          - name: T2M_MAX
+            description: Maximum air temperature at 2m (°C)
+          - name: T2M_MIN
+            description: Minimum air temperature at 2m (°C)
+          - name: T2M
+            description: Mean air temperature at 2m (°C)
+          - name: T2MDEW
+            description: Dew point temperature at 2m (°C)
+          - name: T2MWET
+            description: Wet bulb temperature at 2m (°C)
+          - name: TS
+            description: Soil/land surface temperature (°C)
+          - name: PRECTOTCORR
+            description: Bias-corrected precipitation (mm/day)
+          - name: RH2M
+            description: Relative humidity at 2m (%)
+          - name: QV2M
+            description: Specific humidity at 2m (kg/kg)
+          - name: ALLSKY_SFC_SW_DWN
+            description: >
+              All-sky insolation incident on horizontal surface (MJ/m²/day).
+              Solar radiation under all sky conditions.
+          - name: CLRSKY_SFC_SW_DWN
+            description: >
+              Clear-sky insolation incident on horizontal surface (MJ/m²/day).
+              Solar radiation under clear sky conditions.
+          - name: WS2M
+            description: Wind speed at 2m (m/s)
+          - name: WS2M_MAX
+            description: Maximum wind speed at 2m (m/s)
+          - name: WD2M
+            description: Wind direction at 2m (degrees from north)
+          - name: PS
+            description: Surface atmospheric pressure (kPa)
+          - name: CLOUD_AMT
+            description: Cloud amount (% of sky covered)
+          - name: x_source
+            description: Data source identifier
+          - name: x_source_type
+            description: Type of source (satellite, model, etc)
+          - name: x_loaded_at
+            description: Load timestamp to warehouse
+          - name: _sdc_extracted_at
+            description: Stitch extraction timestamp
+          - name: _sdc_received_at
+            description: Stitch reception timestamp
+          - name: _sdc_batched_at
+            description: Stitch batch timestamp
+          - name: _sdc_deleted_at
+            description: Stitch deletion marker
+          - name: _sdc_sequence
+            description: Stitch sequence number
+          - name: _sdc_table_version
+            description: Stitch table version
