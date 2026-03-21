@@ -8,7 +8,7 @@ agroprotect:
       method: service-account
       project: "{{ env_var('BIGQUERY_PROJECT_ID', 'agro-protect-490822') }}"
       schema: "{{ env_var('BIGQUERY_DATASET_ID', 'analytics') }}"
-      location: "{{ env_var('BIGQUERY_LOCATION') }}"
+      location: "{{ env_var('BIGQUERY_LOCATION', 'southamerica-east1') }}"
       keyfile: "{{ env_var('DBT_GOOGLE_APPLICATION_CREDENTIALS') }}"
       threads: 4
 
@@ -17,7 +17,7 @@ agroprotect:
       method: service-account
       project: "{{ env_var('BIGQUERY_PROJECT_ID', 'agro-protect-490822') }}"
       schema: "{{ env_var('BIGQUERY_DATASET_ID', 'analytics') }}_ci"
-      location: "{{ env_var('BIGQUERY_LOCATION') }}"
+      location: "{{ env_var('BIGQUERY_LOCATION', 'southamerica-east1') }}"
       keyfile: "{{ env_var('DBT_GOOGLE_APPLICATION_CREDENTIALS') }}"
       threads: 4
 
@@ -26,7 +26,7 @@ agroprotect:
       method: service-account
       project: "{{ env_var('BIGQUERY_PROJECT_ID', 'agro-protect-490822') }}"
       schema: "{{ env_var('BIGQUERY_DATASET_ID', 'analytics') }}"
-      location: "{{ env_var('BIGQUERY_LOCATION') }}"
+      location: "{{ env_var('BIGQUERY_LOCATION', 'southamerica-east1') }}"
       keyfile: "{{ env_var('DBT_GOOGLE_APPLICATION_CREDENTIALS') }}"
       threads: 4
 

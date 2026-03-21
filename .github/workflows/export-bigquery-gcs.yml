@@ -1,11 +1,9 @@
-# Export BigQuery tables/views to a GCS bucket (NDJSON) for frontend or downstream use.
-# Use the export service account (do not reuse Meltano's SA unless it has the same permissions).
+# Export BigQuery tables/views to GCS (NDJSON) + manifiesto (export_manifest.json con URLs firmadas;
+# dbt target/manifest.json vía dbt parse --target prod antes del script).
 #
-# Secrets: EXPORT_GOOGLE_APPLICATION_CREDENTIALS (JSON base64, single line),
-#          BIGQUERY_PROJECT_ID, EXPORT_GCS_BUCKET_NAME,
-#          and EXPORT_TABLE_MAP *or* EXPORT_BQ_TABLE_REF (+ optional EXPORT_GCS_BLOB_NAME).
-#
-# Optional: EXPORT_GCS_PREFIX (default prod/exports via job env).
+# Secrets: EXPORT_GOOGLE_APPLICATION_CREDENTIALS (base64), BIGQUERY_PROJECT_ID.
+# Opcional: DBT_GOOGLE_APPLICATION_CREDENTIALS — si falta, dbt parse usa la misma key que el export.
+# EXPORT_GCS_BUCKET_NAME default agroprotect-exports-prod. En PR: prefijo gs://…/pr/<n>/exports/.
 
 name: export-bigquery-gcs
 
@@ -13,6 +11,12 @@ on:
   schedule:
     - cron: "30 */6 * * *"
   workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "agro-protect/**"
+      - ".github/workflows/export-bigquery-gcs.yml"
   push:
     branches:
       - main
@@ -20,6 +24,8 @@ on:
       - "agro-protect/scripts/export_to_gcs.py"
       - ".github/workflows/export-bigquery-gcs.yml"
       - "agro-protect/scripts/requirements-export.txt"
+      - "agro-protect/transform/**"
+      - "agro-protect/pyproject.toml"
   workflow_run:
     workflows: [data-pipeline]
     types:
@@ -29,18 +35,24 @@ on:
 
 jobs:
   export-to-gcs:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    if: |
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
     name: Export BigQuery → GCS
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
       BIGQUERY_PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID || 'agro-protect-490822' }}
-      EXPORT_GCS_BUCKET_NAME: ${{ secrets.EXPORT_GCS_BUCKET_NAME }}
+      BIGQUERY_DATASET_ID: ${{ secrets.BIGQUERY_DATASET_ID || 'analytics' }}
+      # Alineado a datasets BQ del proyecto (evita US + stg en southamerica-east1). GCS bucket puede ser us-central1.
+      BIGQUERY_LOCATION: ${{ secrets.BIGQUERY_LOCATION || 'southamerica-east1' }}
+      EXPORT_GCS_BUCKET_NAME: ${{ secrets.EXPORT_GCS_BUCKET_NAME || 'agroprotect-exports-prod' }}
       EXPORT_GCS_PREFIX: ${{ secrets.EXPORT_GCS_PREFIX }}
       EXPORT_TABLE_MAP: ${{ secrets.EXPORT_TABLE_MAP }}
       EXPORT_BQ_TABLE_REF: ${{ secrets.EXPORT_BQ_TABLE_REF }}
       EXPORT_GCS_BLOB_NAME: ${{ secrets.EXPORT_GCS_BLOB_NAME }}
       GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-export-service-account.json
+      DBT_USER: export_ci
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -50,10 +62,12 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install export dependencies
+      - name: Install export + dbt (manifest)
+        working-directory: agro-protect
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r agro-protect/scripts/requirements-export.txt
+          python -m pip install --upgrade pip uv
+          uv pip install --system -r scripts/requirements-export.txt
+          uv pip install --system -e ".[transform]"
 
       - name: Decode GCP credentials (export SA)
         env:
@@ -72,7 +86,6 @@ jobs:
           fi
           python3 -c "import json, pathlib, sys; p=pathlib.Path(sys.argv[1]); json.loads(p.read_text())" "${GOOGLE_APPLICATION_CREDENTIALS}"
 
-      # Secret vacío o solo espacios deja BIGQUERY_PROJECT_ID "" y BigQuery responde ProjectId must be non-empty.
       - name: Normalize BIGQUERY_PROJECT_ID
         run: |
           set -euo pipefail
@@ -84,10 +97,84 @@ jobs:
             BQP="agro-protect-490822"
           fi
           echo "BIGQUERY_PROJECT_ID=${BQP}" >> "${GITHUB_ENV}"
-          # Sin esto, GOOGLE_CLOUD_PROJECT="" en el runner puede vaciar el projectId del job de extract (400).
           echo "GOOGLE_CLOUD_PROJECT=${BQP}" >> "${GITHUB_ENV}"
           echo "GOOGLE_CLOUD_QUOTA_PROJECT=${BQP}" >> "${GITHUB_ENV}"
 
-      - name: Export to GCS
+      # Si BIGQUERY_PROJECT_ID (secret) no coincide con el proyecto donde la SA tiene BQ, tables.get → 404 Project not found.
+      - name: Set up gcloud (verificar / alinear proyecto)
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Authenticate gcloud and align BIGQUERY_PROJECT_ID
+        run: |
+          set -euo pipefail
+          gcloud auth activate-service-account --key-file="${GOOGLE_APPLICATION_CREDENTIALS}"
+          BQP="$(printf '%s' "${BIGQUERY_PROJECT_ID}" | xargs)"
+          KEY_PID="$(jq -r '.project_id // empty' "${GOOGLE_APPLICATION_CREDENTIALS}" | xargs)"
+          if bq ls --project_id="${BQP}" "${BQP}:" >/dev/null 2>&1; then
+            echo "::notice::BIGQUERY_PROJECT_ID=${BQP} OK (bq ls)."
+          elif [ -n "${KEY_PID}" ] && bq ls --project_id="${KEY_PID}" "${KEY_PID}:" >/dev/null 2>&1; then
+            echo "::warning::BIGQUERY_PROJECT_ID (${BQP}) no accesible con esta SA; usando project_id del JSON de export (${KEY_PID})."
+            BQP="${KEY_PID}"
+            echo "BIGQUERY_PROJECT_ID=${BQP}" >> "${GITHUB_ENV}"
+            echo "GOOGLE_CLOUD_PROJECT=${BQP}" >> "${GITHUB_ENV}"
+            echo "GOOGLE_CLOUD_QUOTA_PROJECT=${BQP}" >> "${GITHUB_ENV}"
+          else
+            echo "::error::La SA de export no puede ejecutar bq ls en BIGQUERY_PROJECT_ID ni en project_id de la key. Revisá IAM (BigQuery) y que el secret sea el ID de proyecto correcto."
+            exit 1
+          fi
+          gcloud config set project "${BQP}" --quiet
+
+      - name: dbt credentials for parse (manifest.json)
+        env:
+          DBT_SA_B64: ${{ secrets.DBT_GOOGLE_APPLICATION_CREDENTIALS }}
+        run: |
+          set -euo pipefail
+          DBT_KEY="${GITHUB_WORKSPACE}/gcp-dbt-for-export-manifest.json"
+          if [ -n "${DBT_SA_B64}" ]; then
+            printf '%s' "${DBT_SA_B64}" | base64 -d > "${DBT_KEY}"
+            chmod 600 "${DBT_KEY}"
+            echo "DBT_GOOGLE_APPLICATION_CREDENTIALS=${DBT_KEY}" >> "${GITHUB_ENV}"
+            echo "::notice::dbt parse usa DBT_GOOGLE_APPLICATION_CREDENTIALS (secret)."
+          else
+            echo "DBT_GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}" >> "${GITHUB_ENV}"
+            echo "::notice::dbt parse reutiliza la misma key que EXPORT (definí DBT_GOOGLE_APPLICATION_CREDENTIALS si necesitás otra SA)."
+          fi
+
+      - name: GCS prefix for pull requests
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "EXPORT_GCS_PREFIX=pr/${{ github.event.pull_request.number }}/exports" >> "${GITHUB_ENV}"
+          echo "::notice::PR export → gs prefix pr/${{ github.event.pull_request.number }}/exports (no pisa prod/exports)."
+
+      - name: Prepare dbt profiles
+        run: |
+          cp agro-protect/transform/profiles.yml.example agro-protect/transform/profiles.yml
+
+      - name: dbt deps and parse (genera target/manifest.json)
+        working-directory: agro-protect/transform
+        env:
+          DBT_PROFILES_DIR: ${{ github.workspace }}/agro-protect/transform
+        run: |
+          set -euo pipefail
+          dbt deps
+          dbt parse --target prod
+
+      - name: Hint modo explícito (EXPORT_TABLE_MAP)
+        env:
+          EXPORT_TABLE_MAP: ${{ secrets.EXPORT_TABLE_MAP }}
+        run: |
+          if [ -n "${EXPORT_TABLE_MAP:-}" ]; then
+            echo "::notice::EXPORT_TABLE_MAP definido → modo explícito. En prod las vistas suelen ser \`stg.stg_agro_*\`, no \`analytics.*\`. Para modo auto, borrá el secret EXPORT_TABLE_MAP."
+          fi
+
+      - name: Export to GCS (+ manifest dbt + export_manifest)
         working-directory: agro-protect
-        run: python scripts/export_to_gcs.py
+        env:
+          DBT_MANIFEST_PATH: transform/target/manifest.json
+        run: |
+          set -euo pipefail
+          if [ ! -s transform/target/manifest.json ]; then
+            echo "::error::transform/target/manifest.json no existe tras dbt parse."
+            exit 1
+          fi
+          python scripts/export_to_gcs.py

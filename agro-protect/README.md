@@ -18,7 +18,7 @@ This repository implements the **AgroProtect** data stack on BigQuery: **Meltano
 
 Long backfill is **not** in Actions — run [`extraction/scripts/run_tap_agro_bq_yearly.sh`](extraction/scripts/run_tap_agro_bq_yearly.sh) locally; see [`extraction/README.md`](extraction/README.md).
 
-**Export BQ → GCS:** [`export-bigquery-gcs.yml`](../.github/workflows/export-bigquery-gcs.yml) — schedule, manual, push on export changes, and after a successful **`data-pipeline`** run on **`main`**. Details and `EXPORT_TABLE_MAP` in [`scripts/README.md`](scripts/README.md).
+**Export BQ → GCS:** [`export-bigquery-gcs.yml`](../.github/workflows/export-bigquery-gcs.yml) — schedule, manual, **PR a `main`** (paths `agro-protect/**`), push, y tras **`data-pipeline`** OK. Genera `manifest.json` con **`dbt parse`** y lo sube junto al export. Detalle en [`scripts/README.md`](scripts/README.md).
 
 ## 🎯 Prerequisites (read first)
 
@@ -108,7 +108,7 @@ Edit `.env` with your credentials. Minimal example:
 ```bash
 BIGQUERY_PROJECT_ID=agro-protect-490822
 BIGQUERY_DATASET_ID=analytics
-BIGQUERY_LOCATION=US
+BIGQUERY_LOCATION=southamerica-east1
 DBT_GOOGLE_APPLICATION_CREDENTIALS=/path/to/dbt-service-account.json
 MELTANO_GOOGLE_APPLICATION_CREDENTIALS=/path/to/meltano-service-account.json
 GOOGLE_APPLICATION_CREDENTIALS=${MELTANO_GOOGLE_APPLICATION_CREDENTIALS}
@@ -261,7 +261,7 @@ dbt build
 ```
 
 > [i] INFO: Raw data stays in the tap’s dataset; in dev models go to `SANDBOX_<DBT_USER>`.
-> [i] INFO: Creá ese dataset (y `stg` si usás `--defer`) en BigQuery en la **misma región** que `BIGQUERY_LOCATION`, p. ej. `bq mk --dataset --location=US ${BIGQUERY_PROJECT_ID}:SANDBOX_tu_usuario`. En PRs, GitHub Actions lo hace por región alineada a `prod_tap_agro`.
+> [i] INFO: Creá ese dataset (y `stg` si usás `--defer`) en BigQuery en la **misma región** que `BIGQUERY_LOCATION`, p. ej. `bq mk --dataset --location=southamerica-east1 ${BIGQUERY_PROJECT_ID}:SANDBOX_tu_usuario`. En PRs, GitHub Actions lo hace por región alineada a `prod_tap_agro`.
 > [i] INFO: If you modify models or YAML, run `dbt build` again.
 
 ### Add a new model
@@ -314,10 +314,11 @@ They assume `working-directory: agro-protect` for installs and run Meltano/dbt u
 
 **Export a GCS (workflow `export-bigquery-gcs`):**
 
-- `EXPORT_GOOGLE_APPLICATION_CREDENTIALS` (base64) — SA dedicated to export (BQ read + bucket write)
-- `EXPORT_GCS_BUCKET_NAME`
-- `EXPORT_TABLE_MAP` (single-line JSON) **or** `EXPORT_BQ_TABLE_REF` (+ optional `EXPORT_GCS_BLOB_NAME`)
-- Optional: `EXPORT_GCS_PREFIX` (if unset, the script defaults to `prod/exports`)
+- `EXPORT_GOOGLE_APPLICATION_CREDENTIALS` (base64) — SA de export (BQ read + bucket write + list/sign en GCS)
+- `BIGQUERY_PROJECT_ID`; **`BIGQUERY_LOCATION`** opcional (default **southamerica-east1** en workflow/perfil); **`BIGQUERY_DATASET_ID`** (default **analytics**) para modo auto
+- `EXPORT_GCS_BUCKET_NAME` (default **`agroprotect-exports-prod`** en script y workflow)
+- **Por defecto** (sin `EXPORT_TABLE_MAP` / `EXPORT_BQ_TABLE_REF`): exporta tablas/vistas en **`stg`**, **`BIGQUERY_DATASET_ID`** y **`marts`**, NDJSON + **`export_manifest.json`** con URLs firmadas (ver `scripts/README.md`)
+- Opcional: lista manual `EXPORT_TABLE_MAP` o `EXPORT_BQ_TABLE_REF`; `EXPORT_GCS_PREFIX`, `EXPORT_BQ_DATASETS`, `EXPORT_SIGNED_URL_TTL_SEC`
 
 Encode the JSON key before saving to GitHub Secrets:
 
@@ -328,9 +329,9 @@ base64 -i /path/to/service-account.json | tr -d '\n'
 ### Workflows
 
 - `data-pipeline.yml`: **`meltano run tap-agro target-bigquery`** (extract then load to BigQuery). **Daily cron** = yesterday (ART) → `prod`. **Manual dispatch** defaults the same; or fixed window from `meltano.yml` / validate-only. ~10y history: script under `extraction/scripts/`. Local run: **`extraction/README.md`**.
-- `export-bigquery-gcs.yml`: **export BQ → GCS** (NDJSON) via `agro-protect/scripts/export_to_gcs.py`. **Every 6 h** cron + manual + push to `main` when the script changes. Secrets: `EXPORT_GOOGLE_APPLICATION_CREDENTIALS` (base64), `EXPORT_GCS_BUCKET_NAME`, `EXPORT_TABLE_MAP` or `EXPORT_BQ_TABLE_REF`; details in **`scripts/README.md`**.
+- `export-bigquery-gcs.yml`: **export BQ → GCS** (NDJSON + `export_manifest.json` + **`dbt` `manifest.json`**) via `dbt parse --target prod` + `scripts/export_to_gcs.py`. Cron, manual, **PR** (prefijo `pr/<n>/exports/`), push; encadenado opcional tras `data-pipeline`. Sin mapa → auto `stg` + `analytics` + `marts`. Detalle en **`scripts/README.md`**.
 - `dbt-pr-ci.yml`: on PR. Alinea proyecto (secret vs key JSON) y región con `prod_tap_agro`; crea/recrea datasets `SANDBOX_*` si la región no coincide; `dbt build` en sandbox + SQLFluff.
-- `dbt-cd-docs.yml`: al **merge/push a `main`** o **workflow_dispatch** corre el job **deploy**: `dbt build` (prod) → **`dbt docs generate`** → sube `target/` a **GitHub Pages** (no se usa `dbt docs serve` en CI; eso es solo en tu máquina). En PR solo valida `dbt parse`. Opcional: sube `target/manifest.json` a GCS si definís `DBT_MANIFEST_GCS_URI`.
+- `dbt-cd-docs.yml`: al **merge/push a `main`** o **workflow_dispatch** corre el job **deploy**: normaliza `BIGQUERY_PROJECT_ID` → `dbt build` (prod) → **`dbt docs generate`** → comprueba que exista `target/manifest.json` → sube `target/` a **GitHub Pages** (no se usa `dbt docs serve` en CI; eso es solo en tu máquina). En PR solo valida `dbt parse`. Opcional: sube `manifest.json` a GCS si definís `DBT_MANIFEST_GCS_URI`.
 
 > [i] INFO: dbt workflows use `dbt build` when the job runs.
 
@@ -340,6 +341,12 @@ base64 -i /path/to/service-account.json | tr -d '\n'
 - With `state:modified+` and `--defer`, dbt compiles/runs only what changed and defers the rest to prod.
 - Without a valid manifest, the job does a **full build** (slower but safe).
 - El `manifest.json` para slim CI sale del mismo `dbt docs generate` en **`dbt-cd-docs`**: o lo copiás a GCS (secret) o queda publicado en Pages en la raíz del sitio (`manifest.json`). Hasta que **Pages esté habilitado** y haya un deploy exitoso en `main`, el fallback por URL suele fallar y es normal.
+
+**Checklist: tener `manifest.json` disponible para slim CI**
+
+1. **Primer deploy exitoso en `main`**: el workflow `dbt-cd-docs` debe completar el job **deploy** (`dbt build` → `dbt docs generate` → verificación de `target/manifest.json` → artefacto a Pages; opcional subida a GCS).
+2. **GitHub Pages**: Settings → Pages → Source **GitHub Actions**. La URL base de los docs es `https://<github_owner>.github.io/<repo>/` y el manifest queda en **`https://<github_owner>.github.io/<repo>/manifest.json`** (misma URL que usa `dbt-pr-ci` como último fallback).
+3. **Cuándo usar `DBT_MANIFEST_GCS_URI`**: si el repo es privado, Pages no es accesible públicamente desde el runner, o querés no depender del deploy a Pages; configurá el secret con un URI `gs://bucket/path/manifest.json` y otorgá a la SA de `DBT_GOOGLE_APPLICATION_CREDENTIALS` permiso de escritura en ese objeto. Tras cada `dbt-cd-docs` deploy exitoso, el workflow sube `target/manifest.json` ahí si el secret está definido.
 
 ### SQLFluff
 

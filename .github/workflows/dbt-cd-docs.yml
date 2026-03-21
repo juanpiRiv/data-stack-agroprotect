@@ -19,7 +19,7 @@ jobs:
     env:
       BIGQUERY_PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID || 'agro-protect-490822' }}
       BIGQUERY_DATASET_ID: ${{ secrets.BIGQUERY_DATASET_ID }}
-      BIGQUERY_LOCATION: ${{ secrets.BIGQUERY_LOCATION }}
+      BIGQUERY_LOCATION: ${{ secrets.BIGQUERY_LOCATION || 'southamerica-east1' }}
       DBT_GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-dbt-service-account.json
       GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-dbt-service-account.json
       DBT_USER: ci
@@ -68,7 +68,7 @@ jobs:
     env:
       BIGQUERY_PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID || 'agro-protect-490822' }}
       BIGQUERY_DATASET_ID: ${{ secrets.BIGQUERY_DATASET_ID }}
-      BIGQUERY_LOCATION: ${{ secrets.BIGQUERY_LOCATION }}
+      BIGQUERY_LOCATION: ${{ secrets.BIGQUERY_LOCATION || 'southamerica-east1' }}
       DBT_GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-dbt-service-account.json
       GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-dbt-service-account.json
       DBT_USER: ${{ secrets.DBT_USER }}
