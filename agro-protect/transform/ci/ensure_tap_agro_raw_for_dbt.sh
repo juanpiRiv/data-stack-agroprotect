@@ -7,6 +7,9 @@
 # Si el dataset ya existía en otra región, el workflow de PR alinea BIGQUERY_LOCATION leyendo bq show.
 set -euo pipefail
 
+# Proyecto GCP por defecto del repo (sobreescribible con BIGQUERY_PROJECT_ID / secrets).
+DEFAULT_BQ_PROJECT_ID="agro-protect-490822"
+
 # GitHub secrets a veces traen \\n o espacios al final → bq falla con "ProjectId must be non-empty".
 trim() { printf '%s' "$1" | xargs; }
 
@@ -17,6 +20,9 @@ if [ -z "${PROJECT}" ]; then
 fi
 if [ -z "${PROJECT}" ]; then
   PROJECT="$(trim "${BIGQUERY_PROJECT_ID:-}")"
+fi
+if [ -z "${PROJECT}" ]; then
+  PROJECT="${DEFAULT_BQ_PROJECT_ID}"
 fi
 
 LOC="$(trim "${BIGQUERY_LOCATION:-}")"
@@ -41,6 +47,18 @@ export GOOGLE_CLOUD_PROJECT="${PROJECT}"
 export GOOGLE_CLOUD_QUOTA_PROJECT="${PROJECT}"
 
 echo "Ensuring BigQuery dataset ${PROJECT}.${DS} (location=${LOC}) for dbt sources…"
+
+# Preflight: distingue ID incorrecto / sin IAM (BigQuery suele responder "not found").
+if ! bq ls --project_id="${PROJECT}" "${PROJECT}:" >/dev/null 2>&1; then
+  KEY_HINT=""
+  if [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ] && [ -f "${GOOGLE_APPLICATION_CREDENTIALS}" ] && command -v jq >/dev/null 2>&1; then
+    KP="$(jq -r '.project_id // empty' "${GOOGLE_APPLICATION_CREDENTIALS}")"
+    KE="$(jq -r '.client_email // empty' "${GOOGLE_APPLICATION_CREDENTIALS}")"
+    KEY_HINT=" Clave: SA ${KE}; project_id en JSON=${KP}."
+  fi
+  echo "::error::BigQuery no accede al proyecto '${PROJECT}' (inexistente, mal escrito o la SA sin permisos).${KEY_HINT} Verificá el secret BIGQUERY_PROJECT_ID (ID del proyecto en GCP Console → Configuración) y roles BigQuery para esa SA en ese proyecto."
+  exit 2
+fi
 
 if ! bq show --format=none --project_id="${PROJECT}" "${PROJECT}:${DS}" >/dev/null 2>&1; then
   bq --project_id="${PROJECT}" mk --dataset --location="${LOC}" "${PROJECT}:${DS}"
