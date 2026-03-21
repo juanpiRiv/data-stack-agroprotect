@@ -8,8 +8,10 @@ import os
 import sys
 
 from google.cloud import bigquery
+from google.oauth2 import service_account
 
 _DEFAULT_GCP_PROJECT = "agro-protect-490822"
+_BQ_SCOPES = ("https://www.googleapis.com/auth/cloud-platform",)
 
 
 def _project_id_from_credentials() -> str:
@@ -132,20 +134,30 @@ def main() -> None:
             f"({e})"
         ) from e
 
-    project = _project_id()
+    project = _project_id().strip()
     if not project:
         raise SystemExit(
             "No se pudo determinar el proyecto GCP para BigQuery. "
             "Definí BIGQUERY_PROJECT_ID o EXPORT_BQ_PROJECT_ID (sin espacios), o usá una key JSON con project_id."
         )
-    # GOOGLE_CLOUD_PROJECT="" en CI/runners hace que jobs.insert lleve projectId vacío (400) aunque pasemos project=.
-    for env_key in ("GOOGLE_CLOUD_PROJECT", "GCLOUD_PROJECT", "GOOGLE_CLOUD_QUOTA_PROJECT"):
+    # google.cloud._ClientProjectMixin: os.getenv("GOOGLE_CLOUD_PROJECT") devuelve "" (no None) y el cliente
+    # termina con project="" → jobs.insert 400 "ProjectId must be non-empty". Sacar claves vacías antes del Client.
+    for env_key in (
+        "GOOGLE_CLOUD_PROJECT",
+        "GCLOUD_PROJECT",
+        "GOOGLE_CLOUD_QUOTA_PROJECT",
+        "CLOUDSDK_CORE_PROJECT",
+    ):
         if not (os.environ.get(env_key) or "").strip():
             os.environ.pop(env_key, None)
     os.environ["GOOGLE_CLOUD_PROJECT"] = project
     os.environ["GOOGLE_CLOUD_QUOTA_PROJECT"] = project
 
-    client = bigquery.Client(project=project)
+    credentials = service_account.Credentials.from_service_account_file(
+        creds,
+        scopes=_BQ_SCOPES,
+    )
+    client = bigquery.Client(project=project, credentials=credentials)
 
     prefix = _gcs_prefix()
     job_config = bigquery.ExtractJobConfig(
@@ -160,7 +172,12 @@ def main() -> None:
         dest_uri = f"gs://{bucket}/{prefix}{base}_*.json"
 
         table_ref = _table_ref_from_fq(fq)
-        extract_job = client.extract_table(table_ref, dest_uri, job_config=job_config)
+        extract_job = client.extract_table(
+            table_ref,
+            dest_uri,
+            job_config=job_config,
+            project=project,
+        )
         extract_job.result()
 
         print(f"OK {fq} -> {dest_uri}", file=sys.stderr)
