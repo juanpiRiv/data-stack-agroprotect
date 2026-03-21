@@ -59,13 +59,32 @@ def _table_map() -> dict[str, str]:
 def _fully_qualified_table(ref: str) -> str:
     parts = ref.split(".")
     if len(parts) == 3:
-        return ref
+        p, d, t = (x.strip() for x in parts)
+        if not p or not d or not t:
+            raise SystemExit(
+                f"Referencia inválida (cada parte de project.dataset.table debe ser no vacía): {ref!r}"
+            )
+        return f"{p}.{d}.{t}"
     if len(parts) == 2:
         proj = _project_id()
         if not proj:
             raise SystemExit("For dataset.table you need BIGQUERY_PROJECT_ID or EXPORT_BQ_PROJECT_ID.")
-        return f"{proj}.{parts[0]}.{parts[1]}"
+        d, t = (x.strip() for x in parts)
+        if not d or not t:
+            raise SystemExit(f"Referencia inválida dataset.table: {ref!r}")
+        return f"{proj}.{d}.{t}"
     raise SystemExit(f"Invalid table reference (use dataset.table or project.dataset.table): {ref!r}")
+
+
+def _table_ref_from_fq(fq: str) -> bigquery.TableReference:
+    parts = fq.split(".")
+    if len(parts) != 3:
+        raise SystemExit(f"FQ interno inválido: {fq!r}")
+    project_id, dataset_id, table_id = (p.strip() for p in parts)
+    if not project_id or not dataset_id or not table_id:
+        raise SystemExit(f"FQ con segmento vacío (revisá EXPORT_TABLE_MAP): {fq!r}")
+    dr = bigquery.DatasetReference(project_id, dataset_id)
+    return bigquery.TableReference(dr, table_id)
 
 
 def _gcs_prefix() -> str:
@@ -119,6 +138,13 @@ def main() -> None:
             "No se pudo determinar el proyecto GCP para BigQuery. "
             "Definí BIGQUERY_PROJECT_ID o EXPORT_BQ_PROJECT_ID (sin espacios), o usá una key JSON con project_id."
         )
+    # GOOGLE_CLOUD_PROJECT="" en CI/runners hace que jobs.insert lleve projectId vacío (400) aunque pasemos project=.
+    for env_key in ("GOOGLE_CLOUD_PROJECT", "GCLOUD_PROJECT", "GOOGLE_CLOUD_QUOTA_PROJECT"):
+        if not (os.environ.get(env_key) or "").strip():
+            os.environ.pop(env_key, None)
+    os.environ["GOOGLE_CLOUD_PROJECT"] = project
+    os.environ["GOOGLE_CLOUD_QUOTA_PROJECT"] = project
+
     client = bigquery.Client(project=project)
 
     prefix = _gcs_prefix()
@@ -133,7 +159,8 @@ def main() -> None:
         base = blob_key[:-5] if blob_key.endswith(".json") else blob_key
         dest_uri = f"gs://{bucket}/{prefix}{base}_*.json"
 
-        extract_job = client.extract_table(fq, dest_uri, job_config=job_config)
+        table_ref = _table_ref_from_fq(fq)
+        extract_job = client.extract_table(table_ref, dest_uri, job_config=job_config)
         extract_job.result()
 
         print(f"OK {fq} -> {dest_uri}", file=sys.stderr)
