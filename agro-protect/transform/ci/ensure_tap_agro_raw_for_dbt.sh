@@ -7,9 +7,28 @@
 # Si el dataset ya existía en otra región, el workflow de PR alinea BIGQUERY_LOCATION leyendo bq show.
 set -euo pipefail
 
-PROJECT="${BIGQUERY_PROJECT_ID:?missing BIGQUERY_PROJECT_ID}"
-LOC="${BIGQUERY_LOCATION:?missing BIGQUERY_LOCATION}"
-DS="${DBT_TAP_AGRO_DATASET:?missing DBT_TAP_AGRO_DATASET}"
+# GitHub secrets a veces traen \\n o espacios al final → bq falla con "ProjectId must be non-empty".
+trim() { printf '%s' "$1" | xargs; }
+
+PROJECT="$(trim "${BIGQUERY_PROJECT_ID:-}")"
+LOC="$(trim "${BIGQUERY_LOCATION:-}")"
+DS="$(trim "${DBT_TAP_AGRO_DATASET:-}")"
+
+if [ -z "${PROJECT}" ]; then
+  echo "::error::BIGQUERY_PROJECT_ID vacío o solo espacios (revisá el secret en GitHub)."
+  exit 1
+fi
+if [ -z "${LOC}" ]; then
+  echo "::error::BIGQUERY_LOCATION vacío o solo espacios."
+  exit 1
+fi
+if [ -z "${DS}" ]; then
+  echo "::error::DBT_TAP_AGRO_DATASET vacío o solo espacios."
+  exit 1
+fi
+
+export CLOUDSDK_CORE_PROJECT="${PROJECT}"
+export GOOGLE_CLOUD_PROJECT="${PROJECT}"
 
 echo "Ensuring BigQuery dataset ${PROJECT}.${DS} (location=${LOC}) for dbt sources…"
 

@@ -54,10 +54,15 @@ jobs:
 
       - name: Check required secrets for dbt profile
         run: |
-          if [ -z "${BIGQUERY_PROJECT_ID}" ] || [ -z "${BIGQUERY_LOCATION}" ]; then
-            echo "::error::Set repository secrets BIGQUERY_PROJECT_ID and BIGQUERY_LOCATION (required)."
+          # Trimear: secret con salto de línea pasa [ -z ] pero rompe bq ("ProjectId must be non-empty").
+          BQP="$(printf '%s' "${BIGQUERY_PROJECT_ID}" | xargs)"
+          BQL="$(printf '%s' "${BIGQUERY_LOCATION}" | xargs)"
+          if [ -z "${BQP}" ] || [ -z "${BQL}" ]; then
+            echo "::error::Set repository secrets BIGQUERY_PROJECT_ID and BIGQUERY_LOCATION (required, sin espacios/saltos extra)."
             exit 1
           fi
+          echo "BIGQUERY_PROJECT_ID=${BQP}" >> "${GITHUB_ENV}"
+          echo "BIGQUERY_LOCATION=${BQL}" >> "${GITHUB_ENV}"
           if [ -z "${BIGQUERY_DATASET_ID}" ]; then
             echo "::notice::BIGQUERY_DATASET_ID is empty; profiles.yml.example defaults schema to analytics (set the secret to your real dbt dataset id)."
           fi
@@ -107,7 +112,8 @@ jobs:
       - name: Set up gcloud (manifest from GCS)
         uses: google-github-actions/setup-gcloud@v2
         with:
-          project_id: ${{ secrets.BIGQUERY_PROJECT_ID }}
+          # Usar env ya trimeado (paso "Check required secrets" escribe GITHUB_ENV).
+          project_id: ${{ env.BIGQUERY_PROJECT_ID }}
 
       - name: Download production manifest
         env:
