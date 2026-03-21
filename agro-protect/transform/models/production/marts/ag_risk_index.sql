@@ -196,11 +196,11 @@ final AS (
         jd.drought_stress_risk_pct,
         jd.fungal_disease_risk_pct,
         jd.excess_moisture_risk_pct,
-        ROUND(jd.climate_risk_score, 2) AS climate_risk_score,
         jd.avg_yield,
-        ROUND(jd.productivity_risk_score, 2) AS productivity_risk_score,
         jd.inmobiliario_rural_usd_ha,
         jd.iibb_agro_pct,
+        ROUND(jd.climate_risk_score, 2) AS climate_risk_score,
+        ROUND(jd.productivity_risk_score, 2) AS productivity_risk_score,
         ROUND(jd.tax_risk_score, 2) AS tax_risk_score,
         ROUND(
             (

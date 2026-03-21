@@ -15,6 +15,7 @@ SELECT
     SAFE_CAST(superficie_cosechada_ha AS FLOAT64) AS superficie_cosechada_ha,
     SAFE_CAST(produccion_tm AS FLOAT64) AS produccion_tm,
     SAFE_CAST(rendimiento_kgxha AS FLOAT64) AS rendimiento_kgxha,
+    EXTRACT(YEAR FROM CURRENT_DATE()) AS current_year,
     CASE
         WHEN SAFE_CAST(superficie_sembrada_ha AS FLOAT64) > 0
             THEN (
@@ -24,10 +25,11 @@ SELECT
     END AS harvest_ratio_pct,
     CASE
         WHEN SAFE_CAST(superficie_sembrada_ha AS FLOAT64) > 0
-            THEN (SAFE_CAST(produccion_tm AS FLOAT64) * 1000)
+            THEN (
+                (SAFE_CAST(produccion_tm AS FLOAT64) * 1000)
                 / SAFE_CAST(superficie_sembrada_ha AS FLOAT64)
-    END AS produccion_kg_ha_sown,
-    EXTRACT(YEAR FROM CURRENT_DATE()) AS current_year
+            )
+    END AS produccion_kg_ha_sown
 FROM {{ seed('rendimiento_agro') }}
 WHERE
     cultivo IS NOT NULL
