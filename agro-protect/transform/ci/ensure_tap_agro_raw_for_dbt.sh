@@ -10,12 +10,20 @@ set -euo pipefail
 # GitHub secrets a veces traen \\n o espacios al final → bq falla con "ProjectId must be non-empty".
 trim() { printf '%s' "$1" | xargs; }
 
-PROJECT="$(trim "${BIGQUERY_PROJECT_ID:-}")"
+# Misma resolución que source_tap_agro.yml y dbt-pr-ci (DBT_TAP_RESOLVED_PROJECT lo escribe CI).
+PROJECT="$(trim "${DBT_TAP_RESOLVED_PROJECT:-}")"
+if [ -z "${PROJECT}" ]; then
+  PROJECT="$(trim "${DBT_TAP_AGRO_PROJECT:-}")"
+fi
+if [ -z "${PROJECT}" ]; then
+  PROJECT="$(trim "${BIGQUERY_PROJECT_ID:-}")"
+fi
+
 LOC="$(trim "${BIGQUERY_LOCATION:-}")"
 DS="$(trim "${DBT_TAP_AGRO_DATASET:-}")"
 
 if [ -z "${PROJECT}" ]; then
-  echo "::error::BIGQUERY_PROJECT_ID vacío o solo espacios (revisá el secret en GitHub)."
+  echo "::error::Proyecto BigQuery vacío: definí BIGQUERY_PROJECT_ID o DBT_TAP_AGRO_PROJECT (o DBT_TAP_RESOLVED_PROJECT en CI)."
   exit 1
 fi
 if [ -z "${LOC}" ]; then
@@ -29,11 +37,16 @@ fi
 
 export CLOUDSDK_CORE_PROJECT="${PROJECT}"
 export GOOGLE_CLOUD_PROJECT="${PROJECT}"
+# Evita "ProjectId must be non-empty" en clientes que toman quota project del entorno.
+export GOOGLE_CLOUD_QUOTA_PROJECT="${PROJECT}"
 
 echo "Ensuring BigQuery dataset ${PROJECT}.${DS} (location=${LOC}) for dbt sources…"
 
-bq query --use_legacy_sql=false --project_id="${PROJECT}" \
-  "CREATE SCHEMA IF NOT EXISTS \`${PROJECT}.${DS}\` OPTIONS(location='${LOC}')"
+if ! bq show --format=none --project_id="${PROJECT}" "${PROJECT}:${DS}" >/dev/null 2>&1; then
+  bq --project_id="${PROJECT}" mk --dataset --location="${LOC}" "${PROJECT}:${DS}"
+else
+  echo "  dataset ${DS} already exists — skip create"
+fi
 
 ensure_table() {
   local table="$1"
