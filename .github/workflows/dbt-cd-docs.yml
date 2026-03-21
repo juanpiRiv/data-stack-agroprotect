@@ -134,6 +134,53 @@ jobs:
           fi
           gcloud config set project "${BQP}" --quiet
 
+      # dbt-bigquery usa location del perfil para jobs; si stg está en southamerica-east1 y el secret dice US →
+      # "Dataset stg was not found in location".
+      - name: Align BIGQUERY_LOCATION with stg or analytics + ensure stg
+        run: |
+          set -euo pipefail
+          PROJECT="$(printf '%s' "${BIGQUERY_PROJECT_ID}" | xargs)"
+          SCHEMA_MAIN="$(printf '%s' "${BIGQUERY_DATASET_ID:-analytics}" | xargs)"
+          SCHEMA_MAIN="${SCHEMA_MAIN:-analytics}"
+
+          ds_location() {
+            local ds="$1"
+            local info
+            info=$(bq show --format=json --project_id="${PROJECT}" "${PROJECT}:${ds}" 2>/dev/null || true)
+            [ -z "${info}" ] && echo "" && return
+            echo "${info}" | jq -r '.location // empty'
+          }
+
+          norm_upper() { printf '%s' "$1" | tr '[:lower:]' '[:upper:]'; }
+
+          STG_LOC="$(ds_location stg)"
+          MAIN_LOC="$(ds_location "${SCHEMA_MAIN}")"
+
+          if [ -n "${STG_LOC}" ] && [ "${STG_LOC}" != "null" ]; then
+            WANT="${STG_LOC}"
+            SRC="stg"
+          elif [ -n "${MAIN_LOC}" ] && [ "${MAIN_LOC}" != "null" ]; then
+            WANT="${MAIN_LOC}"
+            SRC="${SCHEMA_MAIN}"
+          else
+            WANT=""
+            SRC=""
+          fi
+
+          CUR="$(printf '%s' "${BIGQUERY_LOCATION}" | xargs)"
+          if [ -n "${WANT}" ]; then
+            if [ "$(norm_upper "${WANT}")" != "$(norm_upper "${CUR}")" ]; then
+              echo "::warning::Dataset ${SRC} está en ${WANT} pero BIGQUERY_LOCATION=${CUR}. Ajustando para dbt prod."
+              echo "BIGQUERY_LOCATION=${WANT}" >> "${GITHUB_ENV}"
+            fi
+            CUR="${WANT}"
+          fi
+
+          if ! bq show --project_id="${PROJECT}" "${PROJECT}:stg" >/dev/null 2>&1; then
+            echo "Creando dataset ${PROJECT}:stg en location=${CUR}…"
+            bq --project_id="${PROJECT}" mk --dataset --location="${CUR}" "${PROJECT}:stg"
+          fi
+
       - name: Prepare dbt profiles
         run: |
           cp agro-protect/transform/profiles.yml.example agro-protect/transform/profiles.yml
