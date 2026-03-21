@@ -7,6 +7,8 @@ version: 2
 sources:
   - name: tap_agro
     description: Raw weather and dimensions (tap-meteorology / NASA POWER)
+    # Proyecto GCP explícito (evita ambigüedad del adaptador). DBT_TAP_AGRO_PROJECT opcional si Meltano usa otro proyecto.
+    database: "{% set _tap_proj = env_var('DBT_TAP_AGRO_PROJECT', '') | trim %}{{ _tap_proj if _tap_proj else env_var('BIGQUERY_PROJECT_ID') }}"
     schema: "{{ env_var('DBT_TAP_AGRO_DATASET', target.name ~ '_tap_agro') }}"
     tables:
       - name: locations

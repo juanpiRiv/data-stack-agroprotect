@@ -20,6 +20,8 @@ jobs:
       GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-dbt-service-account.json
       # Raw tap-agro dataset (same name Meltano uses: {env}_tap_agro). Override with repo variable DBT_TAP_AGRO_DATASET.
       DBT_TAP_AGRO_DATASET: ${{ vars.DBT_TAP_AGRO_DATASET || 'prod_tap_agro' }}
+      # Si Meltano carga en otro proyecto que dbt, definí el secret (sino queda igual a BIGQUERY_PROJECT_ID).
+      DBT_TAP_AGRO_PROJECT: ${{ secrets.DBT_TAP_AGRO_PROJECT }}
       # Set true when raw_nasa.clima_diario_nasa_power_view exists in BigQuery.
       DBT_ENABLE_RAW_NASA: 'false'
       DBT_USER: ci_pr_${{ github.event.pull_request.number }}
@@ -59,6 +61,9 @@ jobs:
           if [ -z "${BIGQUERY_DATASET_ID}" ]; then
             echo "::notice::BIGQUERY_DATASET_ID is empty; profiles.yml.example defaults schema to analytics (set the secret to your real dbt dataset id)."
           fi
+          # Debe coincidir con el ID del proyecto en la consola de GCP (ej. agro-protect-490822).
+          TAP_PROJ="${DBT_TAP_AGRO_PROJECT:-${BIGQUERY_PROJECT_ID}}"
+          echo "::notice::Fuentes tap_agro → proyecto ${TAP_PROJ} (secret BIGQUERY_PROJECT_ID; opcional DBT_TAP_AGRO_PROJECT si Meltano usa otro proyecto)."
 
       - name: Prepare dbt profiles
         run: |
