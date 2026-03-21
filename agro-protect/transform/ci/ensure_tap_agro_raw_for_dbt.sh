@@ -68,13 +68,7 @@ if ! bq_can_list_project "${PROJECT}"; then
     export CLOUDSDK_CORE_PROJECT="${PROJECT}"
     export GOOGLE_CLOUD_PROJECT="${PROJECT}"
     export GOOGLE_CLOUD_QUOTA_PROJECT="${PROJECT}"
-    # Pasos siguientes del job (dbt) leen el mismo proyecto.
-    if [ -n "${GITHUB_ENV:-}" ]; then
-      {
-        echo "BIGQUERY_PROJECT_ID=${PROJECT}"
-        echo "DBT_TAP_RESOLVED_PROJECT=${PROJECT}"
-      } >> "${GITHUB_ENV}"
-    fi
+    # En GitHub Actions el workflow ya escribe BIGQUERY_PROJECT_ID en GITHUB_ENV antes de este script.
     echo "Ensuring BigQuery dataset ${PROJECT}.${DS} (location=${LOC}) for dbt sources… (proyecto = clave JSON)"
   elif [ -n "${KEY_PID}" ] && [ "${KEY_PID}" = "${PROJECT}" ]; then
     echo "::error::BigQuery no accede al proyecto '${PROJECT}' pero la SA pertenece a ese mismo proyecto: en GCP → IAM del proyecto '${PROJECT}' añadí a ${KEY_EMAIL} los roles **BigQuery Data Editor** (o Admin) y **BigQuery Job User**."

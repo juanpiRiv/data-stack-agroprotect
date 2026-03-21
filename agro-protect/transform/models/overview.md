@@ -5,7 +5,7 @@ Extraction with Meltano (**tap-agro** for agro weather) and modeling with dbt.
 ## How to navigate
 - Meltano creates raw tables in `<env>_<tap_namespace>`.
 - Raw NASA POWER: **`{env}_tap_agro`** (Meltano) and **`raw_nasa`** (source `tap_nasa` in `source_nasa.yml`).
-- Staging dataset `stg`; marts in `marts` (prod/ci) or `SANDBOX_<DBT_USER>` in dev.
+- Staging dataset `stg`; marts in `marts` (prod/ci) or `SANDBOX_<DBT_USER>` in dev (crear el sandbox en BQ a mano en local; en PR CI lo asegura `.github/workflows/dbt-pr-ci.yml`).
 
 ## Running locally
 1) `set -a; source ../.env; set +a`
