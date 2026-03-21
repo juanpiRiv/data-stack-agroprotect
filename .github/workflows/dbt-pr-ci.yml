@@ -71,10 +71,11 @@ jobs:
         id: changed_sql
         run: |
           git fetch origin "${{ github.base_ref }}" --depth=1
+          # --diff-filter=d: exclude deleted paths (sqlfluff cannot lint removed files)
           if command -v rg >/dev/null 2>&1; then
-            files=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" | rg '^agro-protect/transform/models/.*\.sql$' || true)
+            files=$(git diff --name-only --diff-filter=d "origin/${{ github.base_ref }}...HEAD" | rg '^agro-protect/transform/models/.*\.sql$' || true)
           else
-            files=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -E '^agro-protect/transform/models/.*\.sql$' || true)
+            files=$(git diff --name-only --diff-filter=d "origin/${{ github.base_ref }}...HEAD" | grep -E '^agro-protect/transform/models/.*\.sql$' || true)
           fi
           if [ -z "$files" ]; then
             echo "files=" >> "$GITHUB_OUTPUT"
