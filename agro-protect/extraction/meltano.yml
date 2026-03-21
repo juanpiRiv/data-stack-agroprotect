@@ -2,24 +2,39 @@ default_environment: dev
 
 project_id: agro-protect
 
+# tap-agro → https://github.com/juanpiRiv/tap-meteorology
+#
+# Backfill por fases (solo Open-Meteo, ~110 localidades):
+#   1) Esta ventana: 2025-01-01 → end_date (actualizá end_date al día de corrida o usá config set abajo).
+#   2) Al terminar: start_date=2024-01-01, end_date=2024-12-31 → meltano run …
+#   3) Igual para 2023, 2022, … hasta cubrir el histórico (o ./scripts/run_tap_agro_bq_yearly.sh).
+# Actualizar “hoy” sin editar YAML:
+#   meltano --environment=prod config set tap-agro end_date "$(TZ=America/Argentina/Buenos_Aires date +%Y-%m-%d)"
+#
+# Histórico automático año a año: ./scripts/run_tap_agro_bq_yearly.sh (TZ AR por defecto).
+#
+# BigQuery: method batch_job. project/location/credentials salen del entorno (source ../.env).
+# Dataset: {MELTANO_ENVIRONMENT}_tap_agro (namespace del extractor).
+
 plugins:
   extractors:
-  - name: tap-github
-    variant: meltanolabs
-    pip_url: meltanolabs-tap-github
+  - name: tap-agro
+    namespace: tap_agro
+    pip_url: git+https://github.com/juanpiRiv/tap-meteorology.git@main
+    executable: tap-agro
     config:
-      auth_token: $TAP_GITHUB_AUTH_TOKEN
-      repositories:
-        - juanpiRiv/data-stack-agroprotect
-      stream_options:
-        milestones:
-          state: open
+      # Fase 1 backfill: todo 2025 + año en curso hasta “hoy” (renová end_date al correr).
+      start_date: '2025-01-01'
+      end_date: '2026-03-20'
+      timezone: America/Argentina/Buenos_Aires
+      location_catalog_path: data/locations.csv
+      use_open_meteo: true
+      use_nasa_power: false
+      # Open-Meteo: con una sola API, 8s suele ser equilibrio (~110 locs). Si ves 429, subí a 10–12.
+      request_delay_seconds: 8
     select:
-    - repositories.*
-    - branches.*
-    - commits.*
-    - pull_request_commits.*
-
+    - locations.*
+    - clima_diario_open_meteo.*
 
   loaders:
   - name: target-jsonl
@@ -29,14 +44,27 @@ plugins:
     variant: z3z1ma
     pip_url: git+https://github.com/z3z1ma/target-bigquery.git
     config:
-      project: ${TARGET_BIGQUERY_PROJECT}
-      dataset: ${MELTANO_ENVIRONMENT}_${MELTANO_EXTRACTOR_NAMESPACE}
-      location: ${TARGET_BIGQUERY_LOCATION}
-      credentials_path: ${TARGET_BIGQUERY_CREDENTIALS_PATH}
+      project: ${BIGQUERY_PROJECT_ID}
+      dataset: ${MELTANO_ENVIRONMENT}_tap_agro
+      location: ${BIGQUERY_LOCATION}
+      credentials_path: ${MELTANO_GOOGLE_APPLICATION_CREDENTIALS}
       denormalized: false
       generate_view: true
+      method: batch_job
+      batch_size: 100000
+      timeout: 7200
+      fail_fast: false
 
 environments:
 - name: dev
 - name: ci
+# prod: mismo delay base; subí request_delay_seconds si Open-Meteo devuelve 429 en corridas largas.
 - name: prod
+  config:
+    plugins:
+      extractors:
+      - name: tap-agro
+        config:
+          request_delay_seconds: 8
+          start_date: '2025-01-01'
+          end_date: '2026-03-20'

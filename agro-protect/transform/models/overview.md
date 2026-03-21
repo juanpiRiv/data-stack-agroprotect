@@ -1,36 +1,33 @@
 {% docs __overview__ %}
 # AgroProtect · data stack en BigQuery
-Este proyecto extrae datos de GitHub con Meltano y los modela con dbt para obtener tablas listas para análisis y documentación integrada.
+Extracción con Meltano (tap **por definir** para datos agro) y modelado con dbt.
 
 ## Cómo orientarte
-- Las tablas raw llegan a `<env>_tap_github` vía Meltano.
-- Los modelos de staging (`stg_*`) normalizan los datos en el dataset `stg`.
-- Los marts publican modelos finales en `marts` (prod/ci) o en `SANDBOX_<DBT_USER>` en dev.
-- La documentación de columnas vive junto a cada modelo en archivos YAML.
+- Las tablas raw las crea Meltano en `<env>_<namespace_del_tap>` cuando configures el extractor.
+- Los modelos `stg_*` / marts actuales siguen ligados a fuentes legacy `tap_github` hasta la migración.
+- Staging en dataset `stg`; marts en `marts` (prod/ci) o `SANDBOX_<DBT_USER>` en dev.
 
 ## Cómo ejecutar en local
-1) Cargar variables: `set -a; source ../.env; set +a`.
-2) Extracción según el entorno: `meltano --environment=prod run tap-github target-bigquery` (o `dev` / `ci`).
-3) Desde `transform/`: `./scripts/setup-local.sh && source venv/bin/activate && dbt deps && dbt build --target prod`.
-4) Docs: `dbt docs generate --target prod` y `dbt docs serve`.
+1) `set -a; source ../.env; set +a`
+2) Con tap configurado: `meltano --environment=prod run <tap> target-bigquery` desde `extraction/`
+3) Desde `transform/`: `./scripts/setup-local.sh`, `dbt deps`, `dbt build --target prod` (requiere raw alineado con `sources`)
 
 ## Consejos
-- Prefiere `dbt build` a `dbt run` para mantener los tests.
-- Define `DBT_USER` para builds de desarrollo en sandbox.
-- Añade modelos bajo `models/staging` o `models/production/marts` y su YAML al lado.
+- `dbt build` sobre `run`; define `DBT_USER` en dev.
+- Tras cambiar el tap, actualiza `sources`, macro `ensure_source_datasets` y modelos staging.
 {% enddocs %}
 
 {% docs __agroprotect__ %}
 # AgroProtect · data stack
-Stack listo para operar: Meltano vuelca datos de GitHub en BigQuery y dbt los limpia y publica en marts con tests y documentación.
+Stack BigQuery: Meltano para ingesta y dbt para capas limpias y marts documentados.
 
 ## Qué leer después
-- `README.md` para requisitos y arranque completo.
-- `models/staging/*.yml` para fuentes y columnas de staging.
-- `models/production/marts/*.yml` para marts, tests y descripciones.
+- `README.md` y `extraction/README.md` para el extractor.
+- `models/staging/*.yml` para fuentes (hoy legacy GitHub hasta migración agro).
+- `models/production/marts/*.yml` para marts y tests.
 
 ## Flujo de equipo
-- Mantén `.env` alineado con tu proyecto GCP y datasets.
-- En desarrollo: `dbt build --select <modelo> --target dev`.
-- Tras cambios relevantes: `dbt docs generate --target prod` para revisores.
+- `.env` alineado con GCP y el tap elegido.
+- `dbt build --select <modelo> --target dev` en desarrollo.
+- `dbt docs generate --target prod` para revisión cuando toque.
 {% enddocs %}

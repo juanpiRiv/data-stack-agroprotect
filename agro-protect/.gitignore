@@ -1,19 +1,34 @@
 .DS_Store
+.venv/
 .env
-extraction/.env
-transform/.env
-transform/dbt_internal_packages/
 __pycache__/
 *.pyc
 *.egg-info/
+
+# Python / tooling
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.log
+
+# Meltano / extracción
 extraction/.env
 extraction/.meltano/
 extraction/venv/
 extraction/output/
 extraction/plugins/
+# Artefactos locales de credenciales (usar .env + path absoluto)
+extraction/*service-account*.json
+extraction/gcp-*.json
+
+# dbt (transform)
+transform/.env
 transform/venv/
 transform/.dbt/
 transform/dbt_packages/
+transform/dbt_internal_packages/
 transform/package-lock.yml
 transform/logs/
 transform/target/

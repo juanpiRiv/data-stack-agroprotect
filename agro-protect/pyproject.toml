@@ -7,7 +7,7 @@ dependencies = []
 
 [project.optional-dependencies]
 extraction = [
-  "meltano[gcs]>=4.0.0",
+  "meltano[gcs]>=4.1.2",
 ]
 transform = [
   "dbt-core>=1.9.0",
