@@ -2,7 +2,8 @@
     materialized='incremental',
     unique_key=['location_id', 'date'],
     tags=['nasa', 'weather', 'climate'],
-    on_schema_change='fail'
+    on_schema_change='fail',
+    enabled=env_var('DBT_ENABLE_RAW_NASA', 'true') | lower in ['true', '1', 'yes']
 ) }}
 
 WITH source_data AS (

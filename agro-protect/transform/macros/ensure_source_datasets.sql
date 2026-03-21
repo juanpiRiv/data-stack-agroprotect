@@ -1,5 +1,10 @@
 {% macro ensure_source_datasets() -%}
-    {%- set source_datasets = [target.name ~ '_tap_agro', 'raw_nasa'] -%}
+    {%- set tap_agro_ds = env_var('DBT_TAP_AGRO_DATASET', target.name ~ '_tap_agro') -%}
+    {%- set nasa_on = env_var('DBT_ENABLE_RAW_NASA', 'true') | lower in ['true', '1', 'yes'] -%}
+    {%- set source_datasets = [tap_agro_ds] -%}
+    {%- if nasa_on -%}
+        {%- set source_datasets = source_datasets + ['raw_nasa'] -%}
+    {%- endif -%}
     {%- set project = target.project -%}
     {%- set location = target.location if target.location is defined and target.location else 'US' -%}
 
