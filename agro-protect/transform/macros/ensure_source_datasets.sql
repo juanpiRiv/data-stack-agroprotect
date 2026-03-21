@@ -17,4 +17,23 @@
             {% do run_query(ddl) %}
         {% endif %}
     {%- endfor -%}
+
+    {# Dev (p. ej. PR CI): generate_schema_name usa SANDBOX_<DBT_USER> sin --defer, y `stg` con --defer + +schema:stg. BigQuery exige que el dataset exista. #}
+    {%- if target.name == 'dev' -%}
+        {%- set raw_user = env_var('DBT_USER', 'default_user') -%}
+        {%- set user = raw_user.split('@')[0] | replace('.', '_') | replace('-', '_') -%}
+        {%- set sandbox_ds = 'SANDBOX_' ~ (user | upper) -%}
+        {%- if execute -%}
+            {%- set ddl_sb -%}
+                CREATE SCHEMA IF NOT EXISTS `{{ project }}.{{ sandbox_ds }}`
+                OPTIONS(location="{{ location }}")
+            {%- endset -%}
+            {% do run_query(ddl_sb) %}
+            {%- set ddl_stg -%}
+                CREATE SCHEMA IF NOT EXISTS `{{ project }}.stg`
+                OPTIONS(location="{{ location }}")
+            {%- endset -%}
+            {% do run_query(ddl_stg) %}
+        {%- endif -%}
+    {%- endif -%}
 {%- endmacro %}

@@ -125,17 +125,17 @@ jobs:
         run: |
           echo "${{ steps.changed_sql.outputs.files }}" | sed 's|^agro-protect/||' | xargs -d '\n' sqlfluff lint
 
-      # setup-gcloud avisa si no hay credenciales; hay que activar la SA antes.
-      - name: Authenticate gcloud (dbt service account)
-        run: |
-          gcloud auth activate-service-account --key-file="${GOOGLE_APPLICATION_CREDENTIALS}"
-          gcloud config set project "${DBT_TAP_RESOLVED_PROJECT:-${BIGQUERY_PROJECT_ID}}" --quiet
-
+      # Instalar gcloud primero; luego auth (si no, `gcloud` no existe en el runner).
       - name: Set up gcloud (manifest from GCS)
         uses: google-github-actions/setup-gcloud@v2
         with:
           # Mismo proyecto que stub tap-agro / perfil (GITHUB_ENV tras "Check required secrets").
           project_id: ${{ env.DBT_TAP_RESOLVED_PROJECT || env.BIGQUERY_PROJECT_ID }}
+
+      - name: Authenticate gcloud (dbt service account)
+        run: |
+          gcloud auth activate-service-account --key-file="${GOOGLE_APPLICATION_CREDENTIALS}"
+          gcloud config set project "${DBT_TAP_RESOLVED_PROJECT:-${BIGQUERY_PROJECT_ID}}" --quiet
 
       - name: Download production manifest
         env:
@@ -179,9 +179,10 @@ jobs:
           agro-protect/transform/ci/ensure_tap_agro_raw_for_dbt.sh
 
       # ensure_* puede escribir BIGQUERY_PROJECT_ID en GITHUB_ENV (alinear con project_id de la key).
+      # No fallar el job si Cloud Resource Manager API está deshabilitada (bq/dbt usan proyecto explícito).
       - name: Sync gcloud default project
         run: |
-          gcloud config set project "${BIGQUERY_PROJECT_ID}" --quiet
+          gcloud config set project "${BIGQUERY_PROJECT_ID}" --quiet || true
 
       # dbt-bigquery resuelve fuentes en la región del perfil. Si prod_tap_agro vive en US y el
       # secret dice p. ej. southamerica-east1, BQ devuelve "Dataset not found in location".
