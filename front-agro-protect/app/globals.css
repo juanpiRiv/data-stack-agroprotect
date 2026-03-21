@@ -1,0 +1,177 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: #0f131c;
+  --foreground: #dfe2ef;
+  --card: #1c1f29;
+  --card-foreground: #dfe2ef;
+  --popover: #1c1f29;
+  --popover-foreground: #dfe2ef;
+  --primary: #39ff14;
+  --primary-foreground: #053900;
+  --secondary: #fd9000;
+  --secondary-foreground: #2e1500;
+  --muted: #262a34;
+  --muted-foreground: #85967c;
+  --accent: #31353f;
+  --accent-foreground: #baccb0;
+  --destructive: #c50100;
+  --destructive-foreground: #fff8f7;
+  --border: rgba(255, 255, 255, 0.1);
+  --input: #31353f;
+  --ring: #39ff14;
+  --radius: 0.5rem;
+  
+  /* Custom AgroProtect colors */
+  --surface-dim: #0f131c;
+  --surface-container: #1c1f29;
+  --surface-container-low: #181b25;
+  --surface-container-lowest: #0a0e17;
+  --surface-container-high: #262a34;
+  --surface-container-highest: #31353f;
+  --on-surface: #dfe2ef;
+  --on-surface-variant: #baccb0;
+  --primary-container: #39ff14;
+  --on-primary-container: #107100;
+  --secondary-container: #fd9000;
+  --on-secondary-container: #613400;
+  --tertiary-container: #ffd3cc;
+  --on-tertiary-container: #c50100;
+  --outline: #85967c;
+  --outline-variant: #3c4b35;
+}
+
+.dark {
+  --background: #0f131c;
+  --foreground: #dfe2ef;
+  --card: #1c1f29;
+  --card-foreground: #dfe2ef;
+  --popover: #1c1f29;
+  --popover-foreground: #dfe2ef;
+  --primary: #39ff14;
+  --primary-foreground: #053900;
+  --secondary: #fd9000;
+  --secondary-foreground: #2e1500;
+  --muted: #262a34;
+  --muted-foreground: #85967c;
+  --accent: #31353f;
+  --accent-foreground: #baccb0;
+  --destructive: #c50100;
+  --destructive-foreground: #fff8f7;
+  --border: rgba(255, 255, 255, 0.1);
+  --input: #31353f;
+  --ring: #39ff14;
+}
+
+@theme inline {
+  --font-sans: 'Inter', 'Inter Fallback', sans-serif;
+  --font-mono: 'Geist Mono', 'Geist Mono Fallback';
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  
+  /* AgroProtect custom colors */
+  --color-surface-dim: var(--surface-dim);
+  --color-surface-container: var(--surface-container);
+  --color-surface-container-low: var(--surface-container-low);
+  --color-surface-container-lowest: var(--surface-container-lowest);
+  --color-surface-container-high: var(--surface-container-high);
+  --color-surface-container-highest: var(--surface-container-highest);
+  --color-on-surface: var(--on-surface);
+  --color-on-surface-variant: var(--on-surface-variant);
+  --color-primary-container: var(--primary-container);
+  --color-on-primary-container: var(--on-primary-container);
+  --color-secondary-container: var(--secondary-container);
+  --color-on-secondary-container: var(--on-secondary-container);
+  --color-tertiary-container: var(--tertiary-container);
+  --color-on-tertiary-container: var(--on-tertiary-container);
+  --color-outline: var(--outline);
+  --color-outline-variant: var(--outline-variant);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* AgroProtect custom styles */
+.glass-panel {
+  background: rgba(38, 42, 52, 0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Leaflet overrides */
+.leaflet-container {
+  background: #0a0e17 !important;
+  border-radius: 1rem;
+}
+
+.custom-div-icon {
+  background: transparent;
+  border: none;
+}
+
+/* Hide Leaflet attribution */
+.leaflet-control-attribution {
+  display: none !important;
+}
+
+/* Radar pulse animation */
+@keyframes radar-pulse {
+  0% {
+    transform: scale(0.3);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+/* Marker pulse animation */
+@keyframes marker-pulse {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 0.3;
+  }
+  100% {
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+}
