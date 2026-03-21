@@ -15,7 +15,7 @@ Extractor custom instalado desde GitHub: [juanpiRiv/tap-meteorology](https://git
 
 - **`start_date` / `end_date`**: por defecto el YAML lleva **fase 1** del backfill (**2025-01-01** hasta una **`end_date`** reciente). Cuando termine esa corrida, pasá a **2024** con `config set` (ej. `2024-01-01` … `2024-12-31`) y repetí hacia atrás; o usá **`run_tap_agro_bq_yearly.sh`** para años completos. Para **“hoy”** sin editar el archivo:  
   `meltano --environment=prod config set tap-agro end_date "$(TZ=America/Argentina/Buenos_Aires date +%Y-%m-%d)"`  
-  Reducí el rango en pruebas para no disparar demasiadas llamadas a **Open-Meteo**. NASA POWER va desactivada en `meltano.yml`; para volver a usarla: `use_nasa_power: true` y el `select` de `clima_diario_nasa_power.*`.
+  Reducí el rango en pruebas. Por defecto el repo usa **NASA POWER** (mejor para históricos largos; cuotas distintas a Open-Meteo). Para **Open-Meteo** (más fresco, límites duros en plan gratis): `use_open_meteo: true`, `use_nasa_power: false`, `select` → `clima_diario_open_meteo.*`, y subí `request_delay_seconds` (p. ej. 8–12).
 
 ### Carga diaria (CI)
 
@@ -125,9 +125,9 @@ Dataset raw: **`{entorno}_tap_agro`** (por ejemplo `prod_tap_agro`).
 ### Streams esperados
 
 - `locations`
-- `clima_diario_open_meteo`
+- `clima_diario_nasa_power` (default actual)
 
-(NASA POWER: desactivado; si lo reactivás en el tap, sumá de nuevo `clima_diario_nasa_power.*` al `select` en `meltano.yml`.)
+(Open-Meteo: `clima_diario_open_meteo.*` en `select` si activás `use_open_meteo`.)
 
 ## Error: `project` is a required property / KeyError project
 
@@ -157,13 +157,13 @@ La API pública tiene **tope por minuto** y **por hora**. Con ~110 localidades y
 
 **Qué hacer (histórico / muchas localidades):**
 
-1. Usá **`./scripts/run_tap_agro_bq_yearly.sh`** (un año por corrida). En `meltano.yml`, el default es **`request_delay_seconds: 8`** (solo Open-Meteo); si ves **429**, subí a **10–12**.
+1. Usá **`./scripts/run_tap_agro_bq_yearly.sh`** (un año por corrida). Con **NASA**, el default suele ser **`request_delay_seconds: 3`**. Con **Open-Meteo**, usá **8–12**; si ves **429** diario/minuto, pausá hasta el día siguiente o pasá temporalmente a NASA.
 2. Entre años, enfriá la cuota horaria:  
    `PAUSE_BETWEEN_YEARS_SEC=300 ./scripts/run_tap_agro_bq_yearly.sh`  
    o dejá pasar **~1 h** y volvé a correr el mismo año si falló al final.
 3. Más delay:  
    `meltano --environment=prod config set tap-agro request_delay_seconds 10`
-4. Acortá ventana de fechas, desactivá localidades en `locations.csv` (`is_active`), o subí más el delay; con **solo Open-Meteo** ya no podés alternar a NASA sin reactivarla en `meltano.yml`.
+4. Si Open-Meteo te pegó **429 diario**, alterná a **NASA** en `meltano.yml` (`use_open_meteo: false`, `use_nasa_power: true`, `clima_diario_nasa_power.*`) o acortá fechas / localidades.
 5. Tier de pago / API key en [tap-meteorology](https://github.com/juanpiRiv/tap-meteorology) si necesitás throughput serio.
 
 Mejora durable: en el repo del **tap**, ante 429 “hourly”, backoff largo (p. ej. 3600 s) o más reintentos — hoy el límite de 5 intentos es corto para ese mensaje.

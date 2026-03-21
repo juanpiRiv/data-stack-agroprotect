@@ -4,7 +4,9 @@ project_id: agro-protect
 
 # tap-agro → https://github.com/juanpiRiv/tap-meteorology
 #
-# Backfill por fases (solo Open-Meteo, ~110 localidades):
+# Fuentes: Open-Meteo (más fresco; API gratis con topes duros) vs NASA POWER (otro modelo,
+# suele tolerar mejor históricos largos — no es “sin límite”, revisá la política NASA).
+# Backfill por fases (~110 localidades):
 #   1) Esta ventana: 2025-01-01 → end_date (actualizá end_date al día de corrida o usá config set abajo).
 #   2) Al terminar: start_date=2024-01-01, end_date=2024-12-31 → meltano run …
 #   3) Igual para 2023, 2022, … hasta cubrir el histórico (o ./scripts/run_tap_agro_bq_yearly.sh).
@@ -28,13 +30,14 @@ plugins:
       end_date: '2026-03-20'
       timezone: America/Argentina/Buenos_Aires
       location_catalog_path: data/locations.csv
-      use_open_meteo: true
-      use_nasa_power: false
-      # Open-Meteo: con una sola API, 8s suele ser equilibrio (~110 locs). Si ves 429, subí a 10–12.
-      request_delay_seconds: 8
+      # Tras 429 diario Open-Meteo: NASA solo (false/true). Para “ayer” diario + frescura: Open-Meteo solo o ambas.
+      use_open_meteo: false
+      use_nasa_power: true
+      # Entre llamadas (tap suele aplicar a la fuente activa; NASA suele aceptar menos delay).
+      request_delay_seconds: 3
     select:
     - locations.*
-    - clima_diario_open_meteo.*
+    - clima_diario_nasa_power.*
 
   loaders:
   - name: target-jsonl
@@ -58,13 +61,11 @@ plugins:
 environments:
 - name: dev
 - name: ci
-# prod: mismo delay base; subí request_delay_seconds si Open-Meteo devuelve 429 en corridas largas.
+# prod: podés subir delay si la API activa lo pide (Open-Meteo); NASA suele ir bien con el default del YAML.
 - name: prod
   config:
     plugins:
       extractors:
       - name: tap-agro
         config:
-          request_delay_seconds: 8
-          start_date: '2025-01-01'
-          end_date: '2026-03-20'
+          request_delay_seconds: 3
