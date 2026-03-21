@@ -1,0 +1,41 @@
+version: 2
+
+models:
+  - name: int_location__current
+    description: Current version of each tap-agro location after snapshot deduplication.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - location_id
+    columns:
+      - name: location_id
+        tests:
+          - not_null
+
+  - name: int_weather__daily_base
+    description: Deduplicated daily weather grain with location fallback enrichment.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - location_id
+              - date
+
+  - name: int_yield__province_campaign
+    description: Provincial crop yield aggregated from the department-level seed.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - province_key
+              - campaign_name
+              - crop_key
+
+  - name: int_tax__province
+    description: One-row-per-province economic tax reference table.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - province_key

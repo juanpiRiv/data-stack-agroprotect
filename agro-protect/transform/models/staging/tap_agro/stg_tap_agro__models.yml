@@ -1,0 +1,44 @@
+version: 2
+
+models:
+  - name: stg_tap_agro__locations
+    description: Canonical staging model for raw tap-agro locations.
+    columns:
+      - name: location_id
+        description: Stable location identifier from the tap.
+        tests:
+          - not_null
+      - name: location_name
+        description: Human-readable location name.
+      - name: province_name
+        description: Province display name as delivered by the source.
+      - name: province_key
+        description: Accent-insensitive uppercase province key used for joins.
+      - name: latitude
+        description: Latitude in decimal degrees.
+      - name: longitude
+        description: Longitude in decimal degrees.
+
+  - name: stg_tap_agro__weather_daily
+    description: Canonical staging model for daily weather loaded by tap-agro.
+    columns:
+      - name: location_id
+        description: Foreign key to the location catalog.
+        tests:
+          - not_null
+      - name: date
+        description: Observation date.
+        tests:
+          - not_null
+      - name: province_key
+        description: Accent-insensitive uppercase province key used for joins.
+      - name: max_air_temp_c
+        description: Daily maximum air temperature at 2m in Celsius.
+      - name: min_air_temp_c
+        description: Daily minimum air temperature at 2m in Celsius.
+      - name: avg_air_temp_c
+        description: Daily mean air temperature at 2m in Celsius.
+      - name: precipitation_mm
+        description: Daily precipitation in millimeters.
+      - name: relative_humidity_pct
+        description: Relative humidity percentage at 2m.

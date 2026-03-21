@@ -1,0 +1,62 @@
+version: 2
+
+models:
+  - name: fct_tax_province
+    description: Province-level economic reference table for agro taxes.
+    columns:
+      - name: province_key
+        tests:
+          - not_null
+          - unique
+          - relationships:
+              arguments:
+                to: ref('dim_province')
+                field: province_key
+
+  - name: fct_yield_province_campaign
+    description: Province and campaign yield fact table aggregated from department records.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - province_key
+              - campaign_name
+              - crop_key
+    columns:
+      - name: province_key
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_province')
+                field: province_key
+      - name: crop_name
+        tests:
+          - not_null
+      - name: yield_kg_ha
+        tests:
+          - dbt_utils.expression_is_true:
+              arguments:
+                expression: '>= 0'
+              config:
+                where: 'yield_kg_ha is not null'
+
+  - name: mart_agro_province_campaign
+    description: Province and campaign mart that combines yield, weather, and tax variables.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - province_key
+              - campaign_name
+              - crop_key
+    columns:
+      - name: province_key
+        tests:
+          - not_null
+      - name: campaign_name
+        tests:
+          - not_null
+      - name: crop_name
+        tests:
+          - not_null
