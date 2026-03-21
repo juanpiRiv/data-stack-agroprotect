@@ -84,6 +84,9 @@ jobs:
             BQP="agro-protect-490822"
           fi
           echo "BIGQUERY_PROJECT_ID=${BQP}" >> "${GITHUB_ENV}"
+          # Sin esto, GOOGLE_CLOUD_PROJECT="" en el runner puede vaciar el projectId del job de extract (400).
+          echo "GOOGLE_CLOUD_PROJECT=${BQP}" >> "${GITHUB_ENV}"
+          echo "GOOGLE_CLOUD_QUOTA_PROJECT=${BQP}" >> "${GITHUB_ENV}"
 
       - name: Export to GCS
         working-directory: agro-protect
