@@ -12,10 +12,28 @@ from google.cloud import bigquery
 _DEFAULT_GCP_PROJECT = "agro-protect-490822"
 
 
+def _project_id_from_credentials() -> str:
+    path = (os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") or "").strip()
+    if not path or not os.path.isfile(path):
+        return ""
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        return (data.get("project_id") or "").strip()
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError):
+        return ""
+
+
 def _project_id() -> str:
-    return (
-        os.environ.get("EXPORT_BQ_PROJECT_ID") or os.environ.get("BIGQUERY_PROJECT_ID") or _DEFAULT_GCP_PROJECT
-    ).strip()
+    # Cada variable por separado: si EXPORT_BQ_PROJECT_ID es " " el `or` antiguo no caía al default y .strip() dejaba "".
+    for key in ("EXPORT_BQ_PROJECT_ID", "BIGQUERY_PROJECT_ID"):
+        v = (os.environ.get(key) or "").strip()
+        if v:
+            return v
+    cred_proj = _project_id_from_credentials()
+    if cred_proj:
+        return cred_proj
+    return _DEFAULT_GCP_PROJECT
 
 
 def _table_map() -> dict[str, str]:
@@ -96,7 +114,12 @@ def main() -> None:
         ) from e
 
     project = _project_id()
-    client = bigquery.Client(project=project) if project else bigquery.Client()
+    if not project:
+        raise SystemExit(
+            "No se pudo determinar el proyecto GCP para BigQuery. "
+            "Definí BIGQUERY_PROJECT_ID o EXPORT_BQ_PROJECT_ID (sin espacios), o usá una key JSON con project_id."
+        )
+    client = bigquery.Client(project=project)
 
     prefix = _gcs_prefix()
     job_config = bigquery.ExtractJobConfig(
