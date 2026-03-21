@@ -67,6 +67,13 @@ Then in bucket permissions:
 
 This allows Meltano to create and manage state files.
 
+2b. [GCS] Bucket para **`manifest.json` de dbt** (slim CI)
+
+- Mismo bucket que Meltano o uno dedicado (ej. `gs://tu-proyecto-dbt-artifacts/dbt/manifest.json`).
+- La cuenta de servicio de **dbt** (la del secret `DBT_GOOGLE_APPLICATION_CREDENTIALS`) necesita **`Storage Object Admin`** (o `objectCreator` + `objectViewer`) sobre ese bucket/objeto.
+- En GitHub → Secrets definí **`DBT_MANIFEST_GCS_URI`** con la URI completa del objeto, por ejemplo: `gs://tu-bucket/dbt/manifest.json`.
+- Tras cada deploy exitoso de **`dbt-cd-docs`**, el workflow **sube** `target/manifest.json` a esa URI; los PRs de **`dbt-pr-ci`** la **descargan** para `state:modified+`.
+
 3. [DB] Create BigQuery datasets (or grant create permissions)
 
 You will need datasets for raw and modeled data:
@@ -286,7 +293,8 @@ They assume `working-directory: agro-protect` for installs and run Meltano/dbt u
 - `DBT_GOOGLE_APPLICATION_CREDENTIALS` (base64-encoded JSON key)
 - `MELTANO_GOOGLE_APPLICATION_CREDENTIALS` (base64-encoded JSON key)
 - `DBT_USER` (for sandbox datasets)
-- `DBT_MANIFEST_URL` for custom slim CI
+- **`DBT_MANIFEST_GCS_URI`** (recomendado): `gs://bucket/ruta/manifest.json` — manifest de prod para slim CI; el CD lo sube y el PR lo baja
+- `DBT_MANIFEST_URL` (opcional): URL **https** o `gs://…` si no usás el secret anterior; si no hay ninguno, se intenta el `manifest.json` publicado en GitHub Pages
 - `MELTANO_STATE_BACKEND_URI` (opcional) — `gs://…` con proyecto/bucket con **facturación activa**; si falta, el runner puede usar state en `.meltano` (menos ideal en CI compartido)
 - `TARGET_BIGQUERY_PROJECT` if different from `BIGQUERY_PROJECT_ID`
 - `TARGET_BIGQUERY_LOCATION` if different from `BIGQUERY_LOCATION`
@@ -307,9 +315,10 @@ base64 -i /path/to/service-account.json | tr -d '\n'
 
 ### Slim CI (prod manifest)
 
-- The PR workflow tries to download `manifest.json` from prod.
-- With `state:modified+` and `--defer`, dbt runs only what changed and uses prod for everything else.
-- If there is no manifest, it runs a full build.
+- Orden de búsqueda del manifest en PR: **`DBT_MANIFEST_GCS_URI`** → `DBT_MANIFEST_URL` (https o `gs://`) → GitHub Pages.
+- Con `state:modified+` y `--defer`, dbt compila/ejecuta solo lo cambiado y apoya el resto en prod.
+- Sin manifest válido, el job hace **build completo** (más lento pero seguro).
+- El manifest en GCS se **actualiza** en **`dbt-cd-docs`** al terminar `dbt docs generate` (mismo `manifest.json` que genera dbt en `target/`).
 
 ### SQLFluff
 
