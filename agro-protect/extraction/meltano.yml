@@ -1,17 +1,13 @@
-default_environment: dev
+# Por defecto prod = ayer (`days_back: 1`). Sin fechas fijas en el bloque base del tap.
+default_environment: prod
 
 project_id: agro-protect
 
-# tap-agro → https://github.com/juanpiRiv/tap-meteorology
-#
-# Fuentes: Open-Meteo (más fresco; API gratis con topes duros) vs NASA POWER (otro modelo,
-# suele tolerar mejor históricos largos — no es “sin límite”, revisá la política NASA).
-# Backfill por fases (~110 localidades):
-#   1) Esta ventana: 2025-01-01 → end_date (actualizá end_date al día de corrida o usá config set abajo).
-#   2) Al terminar: start_date=2024-01-01, end_date=2024-12-31 → meltano run …
-#   3) Igual para 2023, 2022, … hasta cubrir el histórico (o ./scripts/run_tap_agro_bq_yearly.sh).
-# Actualizar “hoy” sin editar YAML:
-#   meltano --environment=prod config set tap-agro end_date "$(TZ=America/Argentina/Buenos_Aires date +%Y-%m-%d)"
+# tap-agro → https://github.com/juanpiRiv/tap-meteorology (clima diario NASA POWER).
+# `days_back` pisa start_date/end_date: 1 = ayer en `timezone`.
+#   prod: `days_back: 1`. dev/ci: ventana corta con `days_back` (pruebas locales/CI).
+#   yaml_window: solo para dispatch elt_meltano_yml en Actions (fechas acotadas; sin años en el bloque base).
+# Histórico: ./scripts/run_tap_agro_bq_yearly.sh (setea start_date/end_date por corrida).
 #
 # Histórico automático año a año: ./scripts/run_tap_agro_bq_yearly.sh (TZ AR por defecto).
 #
@@ -25,20 +21,16 @@ plugins:
     pip_url: git+https://github.com/juanpiRiv/tap-meteorology.git@main
     executable: tap-agro
     config:
-      # Fase 1 backfill: todo 2025 + año en curso hasta “hoy” (renová end_date al correr).
-      start_date: '2025-01-01'
-      end_date: '2026-03-20'
+      # Sin `location_catalog_path` el tap usa solo sample_rosario (ver tap-meteorology).
+      # Rango de fechas: por entorno (prod/dev/ci/yaml_window) o overrides / run_tap_agro_bq_yearly.sh — no acá.
       timezone: America/Argentina/Buenos_Aires
       location_catalog_path: data/locations.csv
-      # Tras 429 diario Open-Meteo: NASA solo (false/true). Para “ayer” diario + frescura: Open-Meteo solo o ambas.
+      # Obligatorio: el tap tiene use_open_meteo=true por defecto; solo NASA en este proyecto.
       use_open_meteo: false
-      use_nasa_power: true
-      # NASA: 1s suele ir bien; si ves errores/throttle, subí a 2–3. Open-Meteo necesita más.
       request_delay_seconds: 1
     select:
     - locations.*
     - clima_diario_nasa_power.*
-
   loaders:
   - name: target-jsonl
     variant: andyh1203
@@ -59,13 +51,40 @@ plugins:
       fail_fast: false
 
 environments:
+# Pruebas locales: últimos 30 días (sin heredar años fijos del YAML).
 - name: dev
+  config:
+    plugins:
+      extractors:
+      - name: tap-agro
+        config:
+          use_open_meteo: false
+          days_back: 30
 - name: ci
-# prod: subí delay si cambiás a Open-Meteo o NASA se queja.
+  config:
+    plugins:
+      extractors:
+      - name: tap-agro
+        config:
+          use_open_meteo: false
+          days_back: 1
+# Ingest diario: ayer en timezone del tap.
 - name: prod
   config:
     plugins:
       extractors:
       - name: tap-agro
         config:
+          use_open_meteo: false
           request_delay_seconds: 1
+          days_back: 1
+# Solo GitHub Actions → elt_meltano_yml (ventana fija acotada; cambiá fechas si necesitás otra prueba).
+- name: yaml_window
+  config:
+    plugins:
+      extractors:
+      - name: tap-agro
+        config:
+          use_open_meteo: false
+          start_date: '2024-06-01'
+          end_date: '2024-06-07'

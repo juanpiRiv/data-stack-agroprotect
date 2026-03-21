@@ -13,7 +13,10 @@
 #   $2 LAST_FULL_YEAR (solo orden forward; en reverse se ignora)
 #   $3 END_TAIL_DATE YYYY-MM-DD (default: hoy) → cola: (LAST+1)-01-01 .. esta fecha
 #
-# Opcional: PAUSE_BETWEEN_YEARS_SEC=300 — espera entre año y año (cuota horaria Open-Meteo).
+# Opcional: PAUSE_BETWEEN_YEARS_SEC=300 — espera entre año y año (enfriar cuotas de API).
+#
+# Solo años completos (sin cola hasta hoy): SKIP_TAIL=1 — útil si ya cargaste el tramo reciente
+# y solo faltan años viejos, p. ej. SKIP_TAIL=1 ./scripts/run_tap_agro_bq_yearly.sh 2016 2022
 #
 # Orden inverso (priorizá datos recientes): YEAR_ORDER=reverse
 #   1) año en curso: (hoy año)-01-01 .. hoy
@@ -21,6 +24,7 @@
 #   Ej: YEAR_ORDER=reverse PAUSE_BETWEEN_YEARS_SEC=300 ./scripts/run_tap_agro_bq_yearly.sh
 #
 # Nota: `meltano config set` guarda overrides en el proyecto Meltano (.meltano/), no en meltano.yml.
+# Si el tap tiene `days_back` activo (run diario), este script hace `config unset days_back` antes de fijar fechas.
 
 set -euo pipefail
 
@@ -75,6 +79,11 @@ fi
 
 # Meltano 4+: `meltano config set <plugin> <key> <value>` (no `config tap-agro set`).
 # --environment alinea overrides con el mismo entorno que el `run` (p. ej. prod → prod_tap_agro).
+# Quitar `days_back` si quedó de un run diario; si no, el tap ignora start_date/end_date.
+cfg_clear_days_back() {
+  meltano --environment="${MELTANO_ENV}" config unset tap-agro days_back 2>/dev/null || true
+}
+
 cfg_set() {
   meltano --environment="${MELTANO_ENV}" config set tap-agro "$1" "$2"
 }
@@ -82,6 +91,7 @@ cfg_set() {
 run_full_year() {
   local y="$1"
   echo "======== Año completo ${y} (entorno ${MELTANO_ENV}) ========"
+  cfg_clear_days_back
   cfg_set start_date "${y}-01-01"
   cfg_set end_date "${y}-12-31"
   meltano --environment="${MELTANO_ENV}" run tap-agro target-bigquery
@@ -90,6 +100,7 @@ run_full_year() {
 run_range() {
   local d0="$1" d1="$2" label="$3"
   echo "======== ${label}: ${d0} .. ${d1} (entorno ${MELTANO_ENV}) ========"
+  cfg_clear_days_back
   cfg_set start_date "${d0}"
   cfg_set end_date "${d1}"
   meltano --environment="${MELTANO_ENV}" run tap-agro target-bigquery
@@ -98,7 +109,7 @@ run_range() {
 maybe_pause() {
   _pause="${PAUSE_BETWEEN_YEARS_SEC:-0}"
   if [[ "${_pause}" =~ ^[0-9]+$ ]] && [ "${_pause}" -gt 0 ]; then
-    echo "Pausa ${_pause}s (Open-Meteo)..."
+    echo "Pausa ${_pause}s entre corridas..."
     sleep "${_pause}"
   fi
 }
@@ -127,23 +138,28 @@ else
       run_full_year "$y"
       _pause="${PAUSE_BETWEEN_YEARS_SEC:-0}"
       if [ "${y}" -lt "${LAST_FULL_YEAR}" ] && [[ "${_pause}" =~ ^[0-9]+$ ]] && [ "${_pause}" -gt 0 ]; then
-        echo "Pausa ${_pause}s (Open-Meteo) antes del siguiente año..."
+        echo "Pausa ${_pause}s antes del siguiente año..."
         sleep "${_pause}"
       fi
     done
   fi
 
-  TAIL_YEAR=$((LAST_FULL_YEAR + 1))
-  TAIL_START="${TAIL_YEAR}-01-01"
-  if [[ "${END_TAIL_DATE}" < "${TAIL_START}" ]]; then
-    echo "error: END_TAIL_DATE (${END_TAIL_DATE}) debe ser >= ${TAIL_START}"
-    exit 1
-  fi
+  if [[ "${SKIP_TAIL:-0}" == "1" ]]; then
+    echo "SKIP_TAIL=1 — no se ejecuta la cola tras ${LAST_FULL_YEAR}-12-31."
+  else
+    TAIL_YEAR=$((LAST_FULL_YEAR + 1))
+    TAIL_START="${TAIL_YEAR}-01-01"
+    if [[ "${END_TAIL_DATE}" < "${TAIL_START}" ]]; then
+      echo "error: END_TAIL_DATE (${END_TAIL_DATE}) debe ser >= ${TAIL_START}"
+      exit 1
+    fi
 
-  echo "======== Cola ${TAIL_YEAR}: ${TAIL_START} .. ${END_TAIL_DATE} (entorno ${MELTANO_ENV}) ========"
-  cfg_set start_date "${TAIL_START}"
-  cfg_set end_date "${END_TAIL_DATE}"
-  meltano --environment="${MELTANO_ENV}" run tap-agro target-bigquery
+    echo "======== Cola ${TAIL_YEAR}: ${TAIL_START} .. ${END_TAIL_DATE} (entorno ${MELTANO_ENV}) ========"
+    cfg_clear_days_back
+    cfg_set start_date "${TAIL_START}"
+    cfg_set end_date "${END_TAIL_DATE}"
+    meltano --environment="${MELTANO_ENV}" run tap-agro target-bigquery
+  fi
 fi
 
 echo "Hecho. Fechas de tap-agro quedaron en overrides de Meltano (ver: meltano --environment=${MELTANO_ENV} config list tap-agro)."

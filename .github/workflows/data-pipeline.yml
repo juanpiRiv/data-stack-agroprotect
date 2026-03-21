@@ -2,8 +2,8 @@ name: data-pipeline
 
 # Un solo flujo ELT: tap-agro (extract) → target-bigquery (load a GCP) en el mismo `meltano run`.
 #
-# - schedule: diario, día anterior (Argentina) → prod.
-# - workflow_dispatch: por defecto mismo ELT que el diario; opción ventana meltano.yml o solo validar.
+# - schedule / elt_daily_yesterday: meltano config set tap-agro days_back 1 (ayer en timezone del tap; ver tap-meteorology).
+# - elt_meltano_yml: entorno yaml_window (start_date/end_date acotados en meltano.yml; sin days_back).
 
 on:
   schedule:
@@ -20,7 +20,7 @@ on:
           - elt_meltano_yml
           - validate_only
       meltano_env:
-        description: "Entorno Meltano (dataset {env}_tap_agro); ignorado en schedule (siempre prod)"
+        description: "Entorno Meltano (dataset {env}_tap_agro); schedule → prod. elt_meltano_yml → siempre yaml_window (este campo no aplica)."
         required: true
         default: prod
         type: choice
@@ -51,11 +51,14 @@ jobs:
       - name: Install Meltano plugins
         working-directory: agro-protect/extraction
         run: |
-          meltano install
+          chmod +x scripts/meltano_install.sh scripts/patch_meltano_loader_venvs.sh
+          ./scripts/meltano_install.sh
 
       - name: Discover tap-agro
         if: github.event_name == 'workflow_dispatch'
         working-directory: agro-protect/extraction
+        env:
+          TAP_AGRO_USE_OPEN_METEO: 'false'
         run: |
           meltano invoke tap-agro --discover > /dev/null
 
@@ -69,6 +72,7 @@ jobs:
         if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.elt_mode != 'validate_only')
         working-directory: agro-protect/extraction
         env:
+          TAP_AGRO_USE_OPEN_METEO: 'false'
           BIGQUERY_PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID }}
           BIGQUERY_LOCATION: ${{ secrets.BIGQUERY_LOCATION }}
           MELTANO_GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-meltano-service-account.json
@@ -83,22 +87,25 @@ jobs:
             MELTANO_ENV=prod
             USE_YESTERDAY=1
           else
-            MELTANO_ENV="${{ inputs.meltano_env }}"
-            if [ "${{ inputs.elt_mode }}" = "elt_daily_yesterday" ]; then
-              USE_YESTERDAY=1
-            else
+            if [ "${{ inputs.elt_mode }}" = "elt_meltano_yml" ]; then
+              MELTANO_ENV=yaml_window
               USE_YESTERDAY=0
+            else
+              MELTANO_ENV="${{ inputs.meltano_env }}"
+              if [ "${{ inputs.elt_mode }}" = "elt_daily_yesterday" ]; then
+                USE_YESTERDAY=1
+              else
+                USE_YESTERDAY=0
+              fi
             fi
           fi
 
           if [ "$USE_YESTERDAY" = "1" ]; then
-            export TZ=America/Argentina/Buenos_Aires
-            DAY=$(date -d yesterday +%Y-%m-%d)
-            echo "ELT: extract (tap-agro) → load (target-bigquery) | ventana $DAY .. $DAY (AR)"
-            meltano --environment="${MELTANO_ENV}" config set tap-agro start_date "$DAY"
-            meltano --environment="${MELTANO_ENV}" config set tap-agro end_date "$DAY"
+            echo "ELT: extract → load | tap-agro days_back=1 (ayer en timezone del tap, p. ej. America/Argentina/Buenos_Aires)"
+            meltano --environment="${MELTANO_ENV}" config set tap-agro days_back 1
           else
-            echo "ELT: extract → load | fechas según meltano.yml (ventana corta de prueba)"
+            echo "ELT: extract → load | elt_meltano_yml (entorno yaml_window: fechas en meltano.yml)"
+            meltano --environment="${MELTANO_ENV}" config unset tap-agro days_back || true
           fi
 
           meltano --environment="${MELTANO_ENV}" run tap-agro target-bigquery

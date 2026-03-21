@@ -1,83 +1,132 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+#
+# Bootstrap: Python 3.11+ → agro-protect/.venv → meltano[gcs] + Meltano plugins (BQ loader patch).
+#
+# From anywhere:
+#   ./extraction/scripts/setup-local.sh
+#   bash agro-protect/extraction/scripts/setup-local.sh
+#
+# Optional: SETUP_LOCAL_FRESH=1  → delete and recreate .venv
+#
+set -euo pipefail
 
-echo "🚀 Setting up agro-protect Meltano extraction environment"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+EXTRACTION_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$EXTRACTION_DIR/.." && pwd)"
+VENV_DIR="${REPO_ROOT}/.venv"
+MIN_PY="3.11.0"
 
-# Function to check Python version
-check_python_version() {
-    local version=$1
-    if ! command -v python3 &> /dev/null; then
-        echo "❌ Python 3 is not installed. Please install Python $version or higher"
-        exit 1
-    fi
-    
-    local current_version=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:3])))')
-    if [ "$(printf '%s\n' "$version" "$current_version" | sort -V | head -n1)" != "$version" ]; then
-        echo "❌ Python $version or higher is required (you have $current_version)"
-        exit 1
-    fi
+usage() {
+  cat <<'EOF'
+Usage: ./scripts/setup-local.sh [--help]
+
+Creates or reuses agro-protect/.venv, installs meltano[gcs], runs meltano_install.sh
+from extraction/ (plugins + target-bigquery venv patch).
+
+  SETUP_LOCAL_FRESH=1 ./scripts/setup-local.sh   # delete and recreate .venv
+EOF
 }
 
-# Check Python version
-MIN_PYTHON_VERSION="3.11.0"
-echo "🐍 Checking Python version..."
-check_python_version $MIN_PYTHON_VERSION
-
-# Create virtual environment
-VENV_DIR="venv"
-echo "🔧 Creating virtual environment: $VENV_DIR"
-
-if [ -d "$VENV_DIR" ]; then
-    echo "♻️  Removing existing virtual environment..."
-    rm -rf "$VENV_DIR"
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
 fi
 
-python3 -m venv "$VENV_DIR"
-if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
-    source "$VENV_DIR/Scripts/activate"
-else
-    source "$VENV_DIR/bin/activate"
-fi
+log() { printf '%s\n' "$*"; }
+step() { printf '\n── %s ──\n' "$*"; }
 
-# Upgrade pip
-echo "⬆️  Upgrading pip..."
-if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
-    python -m pip install --upgrade pip
-else
-    pip install --upgrade pip
-fi
+check_python() {
+  if ! command -v python3 &>/dev/null; then
+    log "Error: python3 not found (need ${MIN_PY}+)."
+    exit 1
+  fi
+  local current
+  current="$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:3])))')"
+  if [[ "$(printf '%s\n' "$MIN_PY" "$current" | sort -V | head -n1)" != "$MIN_PY" ]]; then
+    log "Error: need Python ${MIN_PY}+ (found ${current})."
+    exit 1
+  fi
+  log "Python OK (${current})"
+}
 
-# Install uv
-echo "⚡ Installing uv..."
-pip install uv
+ensure_venv() {
+  step "Virtualenv (${VENV_DIR})"
+  if [[ -d "$VENV_DIR" ]]; then
+    if [[ "${SETUP_LOCAL_FRESH:-0}" == "1" ]]; then
+      log "SETUP_LOCAL_FRESH=1 → removing existing .venv"
+      rm -rf "$VENV_DIR"
+    else
+      log "Reusing .venv (recreate: SETUP_LOCAL_FRESH=1 $0)"
+    fi
+  fi
+  if [[ ! -d "$VENV_DIR" ]]; then
+    log "Creating venv…"
+    python3 -m venv "$VENV_DIR"
+  fi
+  # shellcheck source=/dev/null
+  source "${VENV_DIR}/bin/activate"
+  log "Active: ${VIRTUAL_ENV}"
+}
 
-# Install Meltano and dependencies from pyproject.toml
-echo "🎵 Installing Meltano and dependencies..."
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-uv pip install -e "$REPO_ROOT[extraction]"
+install_project_deps() {
+  step "Project deps (meltano[gcs])"
+  log "Upgrading pip, uv…"
+  python -m pip install --upgrade pip uv
+  log "Editable install [extraction]…"
+  (cd "$REPO_ROOT" && uv pip install -e ".[extraction]")
+  log "Meltano: $(meltano --version 2>/dev/null | head -n1 || echo '(n/a)')"
+}
 
-# Initialize Meltano if not already done
-if [ ! -d ".meltano" ]; then
-    echo "🎼 Initializing Meltano project..."
+install_meltano_plugins() {
+  step "Meltano plugins + loader patch"
+  cd "$EXTRACTION_DIR"
+  if [[ -x ./scripts/meltano_install.sh ]]; then
+    ./scripts/meltano_install.sh
+  else
+    log "Warning: meltano_install.sh missing; running meltano install only."
     meltano install
-fi
+    [[ -x ./scripts/patch_meltano_loader_venvs.sh ]] && ./scripts/patch_meltano_loader_venvs.sh
+  fi
+}
 
-echo ""
-echo "✅ Setup complete!"
-echo ""
-echo "📋 Next steps:"
-echo "1. Configure your environment variables:"
-echo "   Edit .env with your credentials"
-echo ""
-echo "2. Activate the virtual environment:"
-if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
-    echo "   source venv/Scripts/activate"
-else
-    echo "   source venv/bin/activate"
-fi
-echo ""
-echo "3. Configure your extractors and loaders in meltano.yml"
-echo ""
-echo "4. Test local extraction:"
-echo "   meltano run <tap-name> <loader-name>"
+print_next_steps() {
+  step "Next steps (copy this checklist)"
+  log ""
+  log "  1) Environment"
+  log "     cd \"${REPO_ROOT}\""
+  log "     cp .env.example .env"
+  log "     # Edit .env: BIGQUERY_*, MELTANO_GOOGLE_APPLICATION_CREDENTIALS, optional MELTANO_STATE_BACKEND_URI"
+  log ""
+  log "  2) Daily ELT — standard Meltano (from agro-protect/)"
+  log "     source .venv/bin/activate"
+  log "     hash -r && which meltano   # must be: ${REPO_ROOT}/.venv/bin/meltano"
+  log "     set -a && source .env && set +a"
+  log "     cd extraction"
+  log "     meltano --environment=prod run tap-agro target-bigquery"
+  log ""
+  log "  3) Shorter test window (dev in meltano.yml)"
+  log "     # same shell as step 2, still in extraction/"
+  log "     meltano --environment=dev run tap-agro target-bigquery"
+  log ""
+  log "  4) Optional shortcuts (same runs; auto-load .env for prod/dev)"
+  log "     From agro-protect/:  ./extraction/scripts/run_prod_elt.sh"
+  log "                      or  ./extraction/scripts/run_dev_elt.sh"
+  log "     Custom meltano args: cd extraction && ./scripts/run_elt.sh …"
+  log ""
+  log "  5) Long backfill (local only): cd extraction && ./scripts/run_tap_agro_bq_yearly.sh"
+  log ""
+  log "  More: extraction/README.md  ·  CI: .github/workflows/data-pipeline.yml"
+  log ""
+}
+
+main() {
+  log "AgroProtect — extraction setup"
+  check_python
+  ensure_venv
+  install_project_deps
+  install_meltano_plugins
+  step "Install finished"
+  print_next_steps
+}
+
+main "$@"
