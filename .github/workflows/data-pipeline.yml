@@ -1,28 +1,39 @@
 name: data-pipeline
 
+# Single ELT flow: tap-agro (extract) → target-bigquery (load to GCP) in one `meltano run`.
+#
+# - schedule / elt_daily_yesterday: meltano config set tap-agro days_back 1 (yesterday in tap timezone; see tap-meteorology).
+# - elt_meltano_yml: yaml_window env (start_date/end_date in meltano.yml; no days_back).
+
 on:
-  workflow_dispatch:
   schedule:
-    - cron: '0 6 * * *'
+    # 06:00 America/Argentina/Buenos_Aires (UTC−3 → 09:00 UTC)
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+    inputs:
+      elt_mode:
+        description: "Manual run mode"
+        required: true
+        type: choice
+        default: elt_daily_yesterday
+        options:
+          - elt_daily_yesterday
+          - elt_meltano_yml
+          - validate_only
+      meltano_env:
+        description: "Meltano env (dataset {env}_tap_agro); schedule → prod. elt_meltano_yml → always yaml_window (ignored for that mode)."
+        required: true
+        default: prod
+        type: choice
+        options:
+          - prod
+          - dev
+          - ci
 
 jobs:
-  run-end-to-end:
+  meltano-pipeline:
     runs-on: ubuntu-latest
-    env:
-      BIGQUERY_PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID }}
-      BIGQUERY_DATASET_ID: ${{ secrets.BIGQUERY_DATASET_ID }}
-      BIGQUERY_LOCATION: ${{ secrets.BIGQUERY_LOCATION }}
-      DBT_GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-dbt-service-account.json
-      MELTANO_GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-meltano-service-account.json
-      GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-meltano-service-account.json
-      MELTANO_STATE_BACKEND_URI: ${{ secrets.MELTANO_STATE_BACKEND_URI }}
-      TARGET_BIGQUERY_PROJECT: ${{ secrets.TARGET_BIGQUERY_PROJECT || secrets.BIGQUERY_PROJECT_ID }}
-      TARGET_BIGQUERY_LOCATION: ${{ secrets.TARGET_BIGQUERY_LOCATION || secrets.BIGQUERY_LOCATION }}
-      TARGET_BIGQUERY_CREDENTIALS_PATH: ${{ github.workspace }}/gcp-meltano-service-account.json
-      TAP_GITHUB_AUTH_TOKEN: ${{ secrets.TAP_GITHUB_AUTH_TOKEN }}
-      DBT_USER: ${{ secrets.DBT_USER }}
-      CI: true
-      DBT_CI_PR_NUMBER: scheduled
+    timeout-minutes: 120
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,38 +41,72 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Install dependencies
         working-directory: agro-protect
         run: |
           python -m pip install --upgrade pip uv
-          uv pip install --system -e ".[extraction,transform]"
-
-      - name: Decode GCP credentials
-        run: |
-          printf '%s' "${{ secrets.DBT_GOOGLE_APPLICATION_CREDENTIALS }}" | base64 -d > "${DBT_GOOGLE_APPLICATION_CREDENTIALS}"
-          printf '%s' "${{ secrets.MELTANO_GOOGLE_APPLICATION_CREDENTIALS }}" | base64 -d > "${MELTANO_GOOGLE_APPLICATION_CREDENTIALS}"
-          chmod 600 "${DBT_GOOGLE_APPLICATION_CREDENTIALS}" "${MELTANO_GOOGLE_APPLICATION_CREDENTIALS}"
+          uv pip install --system -e ".[extraction]"
 
       - name: Install Meltano plugins
         working-directory: agro-protect/extraction
         run: |
-          meltano install
+          chmod +x scripts/meltano_install.sh scripts/patch_meltano_loader_venvs.sh
+          ./scripts/meltano_install.sh
 
-      - name: Run extraction
+      - name: Discover tap-agro
+        if: github.event_name == 'workflow_dispatch'
         working-directory: agro-protect/extraction
-        run: |
-          meltano --environment=prod run tap-github target-bigquery
-
-      - name: Prepare dbt profiles
-        run: |
-          cp agro-protect/transform/profiles.yml.example agro-protect/transform/profiles.yml
-
-      - name: Run dbt models
-        working-directory: agro-protect/transform
         env:
-          DBT_PROFILES_DIR: ${{ github.workspace }}/agro-protect/transform
+          TAP_AGRO_USE_OPEN_METEO: 'false'
         run: |
-          dbt deps
-          dbt build --target prod
+          meltano invoke tap-agro --discover > /dev/null
+
+      - name: Decode Meltano GCP credentials
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.elt_mode != 'validate_only')
+        run: |
+          printf '%s' "${{ secrets.MELTANO_GOOGLE_APPLICATION_CREDENTIALS }}" | base64 -d > "${{ github.workspace }}/gcp-meltano-service-account.json"
+          chmod 600 "${{ github.workspace }}/gcp-meltano-service-account.json"
+
+      - name: Extract + load → BigQuery (tap-agro | target-bigquery)
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.elt_mode != 'validate_only')
+        working-directory: agro-protect/extraction
+        env:
+          TAP_AGRO_USE_OPEN_METEO: 'false'
+          BIGQUERY_PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID }}
+          BIGQUERY_LOCATION: ${{ secrets.BIGQUERY_LOCATION }}
+          MELTANO_GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-meltano-service-account.json
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-meltano-service-account.json
+          MELTANO_STATE_BACKEND_URI: ${{ secrets.MELTANO_STATE_BACKEND_URI }}
+          TARGET_BIGQUERY_PROJECT: ${{ secrets.TARGET_BIGQUERY_PROJECT || secrets.BIGQUERY_PROJECT_ID }}
+          TARGET_BIGQUERY_LOCATION: ${{ secrets.TARGET_BIGQUERY_LOCATION || secrets.BIGQUERY_LOCATION }}
+          TARGET_BIGQUERY_CREDENTIALS_PATH: ${{ github.workspace }}/gcp-meltano-service-account.json
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            MELTANO_ENV=prod
+            USE_YESTERDAY=1
+          else
+            if [ "${{ inputs.elt_mode }}" = "elt_meltano_yml" ]; then
+              MELTANO_ENV=yaml_window
+              USE_YESTERDAY=0
+            else
+              MELTANO_ENV="${{ inputs.meltano_env }}"
+              if [ "${{ inputs.elt_mode }}" = "elt_daily_yesterday" ]; then
+                USE_YESTERDAY=1
+              else
+                USE_YESTERDAY=0
+              fi
+            fi
+          fi
+
+          if [ "$USE_YESTERDAY" = "1" ]; then
+            echo "ELT: extract → load | tap-agro days_back=1 (yesterday in tap TZ, e.g. America/Argentina/Buenos_Aires)"
+            meltano --environment="${MELTANO_ENV}" config set tap-agro days_back 1
+          else
+            echo "ELT: extract → load | date window from meltano.yml (yaml_window; days_back unset)"
+            meltano --environment="${MELTANO_ENV}" config unset tap-agro days_back || true
+          fi
+
+          meltano --environment="${MELTANO_ENV}" run tap-agro target-bigquery

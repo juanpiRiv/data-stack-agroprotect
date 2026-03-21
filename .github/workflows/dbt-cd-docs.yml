@@ -112,6 +112,21 @@ jobs:
         run: |
           dbt docs generate --target prod
 
+      - name: Set up gcloud (subir manifest a GCS)
+        if: ${{ secrets.DBT_MANIFEST_GCS_URI != '' }}
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.BIGQUERY_PROJECT_ID }}
+
+      - name: Upload dbt manifest to GCS (slim CI en PRs)
+        if: ${{ secrets.DBT_MANIFEST_GCS_URI != '' }}
+        working-directory: agro-protect/transform
+        env:
+          DBT_MANIFEST_GCS_URI: ${{ secrets.DBT_MANIFEST_GCS_URI }}
+        run: |
+          gcloud auth activate-service-account --key-file="${GOOGLE_APPLICATION_CREDENTIALS}"
+          gcloud storage cp target/manifest.json "${DBT_MANIFEST_GCS_URI}"
+
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v4
 

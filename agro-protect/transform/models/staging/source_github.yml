@@ -1,8 +1,11 @@
 version: 2
 
+# Legacy: this project no longer runs tap-github in Meltano. Keep until models migrate to another source.
+# Pattern: name + schema = BigQuery dataset = {target}_{tap_namespace}. Active agro: source_tap_agro.yml.
+
 sources:
   - name: tap_github
-    description: GitHub repository data from tap-github
+    description: Legacy GitHub raw (no active Meltano extractor)
     schema: "{{ target.name }}_tap_github"
     tables:
       - name: repositories

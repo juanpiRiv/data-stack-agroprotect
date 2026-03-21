@@ -1,6 +1,6 @@
 # data-stack-agroprotect
 
-Monorepo del data stack **AgroProtect**. El código vive en **`agro-protect/`** (Meltano + dbt + `pyproject.toml`).
+Monorepo for the **AgroProtect** data stack. Code lives under **`agro-protect/`** (Meltano + dbt + `pyproject.toml`).
 
-- Documentación y quick start: [agro-protect/README.md](agro-protect/README.md)
-- GitHub Actions: [`.github/workflows/`](.github/workflows/) (raíz del repo)
+- Docs and quick start: [agro-protect/README.md](agro-protect/README.md)
+- GitHub Actions: [`.github/workflows/`](.github/workflows/) (repository root)

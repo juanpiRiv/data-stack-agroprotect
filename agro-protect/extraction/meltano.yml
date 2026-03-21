@@ -1,26 +1,36 @@
-default_environment: dev
+# Default prod = yesterday (`days_back: 1`). No fixed dates in the tap base block.
+default_environment: prod
 
 project_id: agro-protect
 
+# tap-agro → https://github.com/juanpiRiv/tap-meteorology (daily NASA POWER weather).
+# `days_back` overrides start_date/end_date: 1 = yesterday in `timezone`.
+#   prod: `days_back: 1`. dev/ci: short window with `days_back` (local/CI tests).
+#   yaml_window: only for elt_meltano_yml dispatch in Actions (bounded dates; no multi-year block in base YAML).
+# Historical: ./scripts/run_tap_agro_bq_yearly.sh (sets start_date/end_date per run).
+#
+# Year-by-year backfill: ./scripts/run_tap_agro_bq_yearly.sh (AR TZ by default).
+#
+# BigQuery: batch_job method. project/location/credentials from env (source ../.env).
+# Dataset: {MELTANO_ENVIRONMENT}_tap_agro (extractor namespace).
+
 plugins:
   extractors:
-  - name: tap-github
-    variant: meltanolabs
-    pip_url: meltanolabs-tap-github
+  - name: tap-agro
+    namespace: tap_agro
+    pip_url: git+https://github.com/juanpiRiv/tap-meteorology.git@main
+    executable: tap-agro
     config:
-      auth_token: $TAP_GITHUB_AUTH_TOKEN
-      repositories:
-        - juanpiRiv/data-stack-agroprotect
-      stream_options:
-        milestones:
-          state: open
+      # Without `location_catalog_path` the tap uses only sample_rosario (see tap-meteorology).
+      # Date range: per environment (prod/dev/ci/yaml_window) or overrides / run_tap_agro_bq_yearly.sh — not here.
+      timezone: America/Argentina/Buenos_Aires
+      location_catalog_path: data/locations.csv
+      # Required: tap defaults use_open_meteo=true; this project uses NASA only.
+      use_open_meteo: false
+      request_delay_seconds: 1
     select:
-    - repositories.*
-    - branches.*
-    - commits.*
-    - pull_request_commits.*
-
-
+    - locations.*
+    - clima_diario_nasa_power.*
   loaders:
   - name: target-jsonl
     variant: andyh1203
@@ -29,14 +39,52 @@ plugins:
     variant: z3z1ma
     pip_url: git+https://github.com/z3z1ma/target-bigquery.git
     config:
-      project: ${TARGET_BIGQUERY_PROJECT}
-      dataset: ${MELTANO_ENVIRONMENT}_${MELTANO_EXTRACTOR_NAMESPACE}
-      location: ${TARGET_BIGQUERY_LOCATION}
-      credentials_path: ${TARGET_BIGQUERY_CREDENTIALS_PATH}
+      project: ${BIGQUERY_PROJECT_ID}
+      dataset: ${MELTANO_ENVIRONMENT}_tap_agro
+      location: ${BIGQUERY_LOCATION}
+      credentials_path: ${MELTANO_GOOGLE_APPLICATION_CREDENTIALS}
       denormalized: false
       generate_view: true
+      method: batch_job
+      batch_size: 100000
+      timeout: 7200
+      fail_fast: false
 
 environments:
+# Local tests: last 30 days (no fixed multi-year block inherited from YAML).
 - name: dev
+  config:
+    plugins:
+      extractors:
+      - name: tap-agro
+        config:
+          use_open_meteo: false
+          days_back: 30
 - name: ci
+  config:
+    plugins:
+      extractors:
+      - name: tap-agro
+        config:
+          use_open_meteo: false
+          days_back: 1
+# Daily ingest: yesterday in tap timezone.
 - name: prod
+  config:
+    plugins:
+      extractors:
+      - name: tap-agro
+        config:
+          use_open_meteo: false
+          request_delay_seconds: 1
+          days_back: 1
+# GitHub Actions only → elt_meltano_yml (bounded fixed window; change dates if you need another test range).
+- name: yaml_window
+  config:
+    plugins:
+      extractors:
+      - name: tap-agro
+        config:
+          use_open_meteo: false
+          start_date: '2024-06-01'
+          end_date: '2024-06-07'

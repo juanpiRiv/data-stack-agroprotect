@@ -1,22 +1,26 @@
 [project]
 name = "agro-protect-data-stack"
 version = "1.0.0"
-description = "Extracción (Meltano) y transformación (dbt) para el data stack AgroProtect en BigQuery"
+description = "Meltano extraction and dbt transformation for the AgroProtect data stack on BigQuery"
 requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
 extraction = [
-  "meltano[gcs]>=4.0.0",
+  "meltano[gcs]>=4.1.2",
 ]
 transform = [
-  "dbt-core>=1.9.0",
-  "dbt-bigquery>=1.9.0",
-  "sqlfluff>=3.0.0",
-  "sqlfluff-templater-dbt>=3.0.0",
+    "dbt-core>=1.9.0",
+    "dbt-bigquery>=1.9.0",
+    "sqlfluff>=3.0.0",
+    "sqlfluff-templater-dbt>=3.0.0",
+]
+# Export tablas/vistas BQ → GCS (scripts/export_to_gcs.py)
+export = [
+    "google-cloud-bigquery>=3.25.0",
 ]
 all = [
-  "agro-protect-data-stack[extraction,transform]",
+    "agro-protect-data-stack[extraction,transform,export]",
 ]
 dev = [
   "agro-protect-data-stack[all]",
