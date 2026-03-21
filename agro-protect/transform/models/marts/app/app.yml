@@ -63,6 +63,6 @@ models:
         tests:
           - dbt_utils.expression_is_true:
               arguments:
-                expression: '>= 0 and <= 1'
+                expression: 'between 0 and 1'
               config:
                 where: 'climate_index_total is not null'
