@@ -3,33 +3,33 @@
     tags=['agricultural_data', 'taxes']
 ) }}
 
-with source as (
-    select
+WITH source AS (
+    SELECT
         provincia,
         inmobiliario_rural_usd_ha,
-        safe_cast(
-            regexp_replace(iibb_agro_percent, '%', '') as float64
-        ) as iibb_agro_pct
-    from {{ seed('impuestos_agro_argentina') }}
+        SAFE_CAST(
+            REGEXP_REPLACE(iibb_agro_percent, '%', '') AS FLOAT64
+        ) AS iibb_agro_pct
+    FROM {{ seed('impuestos_agro_argentina') }}
 )
 
-select
+SELECT
     provincia,
-    case
-        when string_length(inmobiliario_rural_usd_ha) > 0
-        then cast(
+    CASE
+        WHEN STRING_LENGTH(inmobiliario_rural_usd_ha) > 0
+        THEN CAST(
             (
-                cast(
-                    regexp_extract(inmobiliario_rural_usd_ha, r'^(\d+)')
-                    as float64
-                ) + cast(
-                    regexp_extract(inmobiliario_rural_usd_ha, r'(\d+)$')
-                    as float64
+                CAST(
+                    REGEXP_EXTRACT(inmobiliario_rural_usd_ha, r'^(\d+)')
+                    AS FLOAT64
+                ) + CAST(
+                    REGEXP_EXTRACT(inmobiliario_rural_usd_ha, r'(\d+)$')
+                    AS FLOAT64
                 )
-            ) / 2 as float64
+            ) / 2 AS FLOAT64
         )
-    end as inmobiliario_rural_usd_ha,
+    END AS inmobiliario_rural_usd_ha,
     iibb_agro_pct
-from source
-where provincia is not null
-order by provincia asc
+FROM source
+WHERE provincia IS NOT NULL
+ORDER BY provincia ASC
