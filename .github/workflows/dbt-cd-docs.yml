@@ -69,6 +69,8 @@ jobs:
       BIGQUERY_PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID || 'agro-protect-490822' }}
       BIGQUERY_DATASET_ID: ${{ secrets.BIGQUERY_DATASET_ID }}
       BIGQUERY_LOCATION: ${{ secrets.BIGQUERY_LOCATION || 'southamerica-east1' }}
+      # secrets no puede usarse en `if:` de steps; se copia acá y se condiciona con env.* abajo.
+      DBT_MANIFEST_GCS_URI: ${{ secrets.DBT_MANIFEST_GCS_URI }}
       DBT_GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-dbt-service-account.json
       GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-dbt-service-account.json
       DBT_USER: ${{ secrets.DBT_USER }}
@@ -140,22 +142,20 @@ jobs:
           jq -e '.metadata' "${M}" >/dev/null
 
       - name: Set up gcloud (subir manifest a GCS)
-        if: ${{ secrets.DBT_MANIFEST_GCS_URI != '' }}
+        if: env.DBT_MANIFEST_GCS_URI != ''
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ env.BIGQUERY_PROJECT_ID }}
 
       - name: Authenticate gcloud (manifest → GCS)
-        if: ${{ secrets.DBT_MANIFEST_GCS_URI != '' }}
+        if: env.DBT_MANIFEST_GCS_URI != ''
         run: |
           gcloud auth activate-service-account --key-file="${GOOGLE_APPLICATION_CREDENTIALS}"
           gcloud config set project "${BIGQUERY_PROJECT_ID}" --quiet
 
       - name: Upload dbt manifest to GCS (slim CI en PRs)
-        if: ${{ secrets.DBT_MANIFEST_GCS_URI != '' }}
+        if: env.DBT_MANIFEST_GCS_URI != ''
         working-directory: agro-protect/transform
-        env:
-          DBT_MANIFEST_GCS_URI: ${{ secrets.DBT_MANIFEST_GCS_URI }}
         run: |
           gcloud storage cp target/manifest.json "${DBT_MANIFEST_GCS_URI}"
 
