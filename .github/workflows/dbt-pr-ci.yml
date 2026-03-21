@@ -144,6 +144,25 @@ jobs:
           chmod +x agro-protect/transform/ci/ensure_tap_agro_raw_for_dbt.sh
           agro-protect/transform/ci/ensure_tap_agro_raw_for_dbt.sh
 
+      # dbt-bigquery resuelve fuentes en la región del perfil. Si prod_tap_agro vive en US y el
+      # secret dice p. ej. southamerica-east1, BQ devuelve "Dataset not found in location".
+      - name: Align BIGQUERY_LOCATION with tap-agro dataset region
+        run: |
+          set -euo pipefail
+          DS_INFO=$(bq show --format=json "${BIGQUERY_PROJECT_ID}:${DBT_TAP_AGRO_DATASET}" 2>/dev/null || true)
+          if [ -z "${DS_INFO}" ]; then
+            echo "No se pudo describir el dataset ${DBT_TAP_AGRO_DATASET}; se usa BIGQUERY_LOCATION del secret."
+            exit 0
+          fi
+          DS_LOC=$(echo "${DS_INFO}" | jq -r '.location // empty')
+          if [ -z "${DS_LOC}" ] || [ "${DS_LOC}" = "null" ]; then
+            exit 0
+          fi
+          if [ "${DS_LOC}" != "${BIGQUERY_LOCATION}" ]; then
+            echo "::warning::Dataset ${DBT_TAP_AGRO_DATASET} está en ${DS_LOC} pero BIGQUERY_LOCATION=${BIGQUERY_LOCATION}. Ajustando para dbt."
+            echo "BIGQUERY_LOCATION=${DS_LOC}" >> "${GITHUB_ENV}"
+          fi
+
       - name: Run dbt build in sandbox
         working-directory: agro-protect/transform
         env:

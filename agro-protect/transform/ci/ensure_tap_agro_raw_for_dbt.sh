@@ -2,6 +2,9 @@
 # Crea dataset + tablas crudas mínimas (0 filas) para que dbt pueda compilar vistas
 # sobre source('tap_agro', ...) cuando Meltano aún no cargó a ese dataset.
 # Idempotente: no toca tablas que ya existen (p. ej. carga real de Meltano).
+#
+# Importante: OPTIONS(location=…) debe coincidir con BIGQUERY_LOCATION del perfil dbt.
+# Si el dataset ya existía en otra región, el workflow de PR alinea BIGQUERY_LOCATION leyendo bq show.
 set -euo pipefail
 
 PROJECT="${BIGQUERY_PROJECT_ID:?missing BIGQUERY_PROJECT_ID}"
