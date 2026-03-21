@@ -2,9 +2,9 @@
 
 ## What is this?
 
-This repository implements the **AgroProtect** data stack on BigQuery: **Meltano** extracts **agro weather** with **`tap-agro`** ([tap-meteorology](https://github.com/juanpiRiv/tap-meteorology)) into **`{target}_tap_agro`**, and **dbt** models staging and marts. This README walks through setup.
+This repository implements the **AgroProtect** data stack on BigQuery: **Meltano** extracts **agro weather** with **`tap-agro`** ([tap-meteorology](https://github.com/juanpiRiv/tap-meteorology)) into **`{target}_tap_agro`**, and **dbt** modela capa **staging** (NASA / agro); los marts son opcionales cuando los agregues. Este README recorre el setup.
 
-**Extraction → transform:** raw in BigQuery (`prod_tap_agro`, …) and dbt staging (`stg_agro_*`, `source_tap_agro.yml` under `transform/models/staging/`). **`tap_github`** sources remain legacy until you migrate those models.
+**Extraction → transform:** raw in BigQuery (`prod_tap_agro` from Meltano, `raw_nasa` for the NASA POWER view) and dbt staging (`stg_agro_*`, `stg_clima_diario_nasa`, `source_tap_agro.yml`, `source_nasa.yml` under `transform/models/staging/`).
 
 ### Production extraction checklist (GitHub Actions + GCP)
 
@@ -46,7 +46,7 @@ If you also installed Meltano globally (`uv tool install meltano`), your shell m
 
 - Extraction with Meltano (**tap-agro** + `target-bigquery` / `target-jsonl` — see [`extraction/README.md`](extraction/README.md))
 - **Export BQ → GCS** (NDJSON for a frontend): [`scripts/README.md`](scripts/README.md)
-- Transformation with dbt (staging -> marts)
+- Transformation with dbt (staging; marts cuando los agregues)
 - Models and columns documented in YAML
 - CI/CD workflows and dbt docs on GitHub Pages
 
@@ -93,7 +93,7 @@ This allows Meltano to create and manage state files.
 
 You will need datasets for raw and modeled data:
 
-- Raw: **`{env}_tap_agro`** for `tap-agro` (e.g. `prod_tap_agro`). Optional legacy: `<env>_tap_github` if you still use old GitHub models.
+- Raw: **`{env}_tap_agro`** for `tap-agro` (e.g. `prod_tap_agro`) and **`raw_nasa`** for `source_nasa` / `stg_clima_diario_nasa` (dbt creates both on `on-run-start` when the hook runs).
 - Modeled: `stg` and `marts` (prod/ci). For dev, dbt uses `SANDBOX_<DBT_USER>`.
 
 4. [CFG] Configure variables
@@ -177,9 +177,9 @@ dbt build --target prod
 9. [SQL] See results in the DB
 
 ```sql
-select * from marts.github_commits limit 10;
-select * from marts.github_committers limit 10;
-select commit_type, count(*) from marts.github_commits group by commit_type;
+select * from stg.stg_clima_diario_nasa limit 10;
+select * from stg.stg_agro_clima_diario_nasa_power limit 10;
+select count(*) from stg.stg_agro_locations;
 ```
 
 10. [DOCS] Generate dbt docs (optional)
@@ -205,11 +205,11 @@ Opens at: http://localhost:8080
 ### Data flow
 
 ```
-Agro source (API / files / …)
-  -> Meltano (your tap + target-bigquery)
-  -> BigQuery: dataset <env>_<namespace_tap> (raw)
+Agro / NASA POWER (API)
+  -> Meltano (tap-agro + target-bigquery)
+  -> BigQuery: dataset <env>_tap_agro (raw) y raw_nasa (vista NASA)
   -> dbt staging: dataset stg (stg_*)
-  -> dbt marts: dataset marts (final models)
+  -> (opcional) dbt marts: dataset marts
 ```
 
 ### Staging vs marts
@@ -219,14 +219,11 @@ Agro source (API / files / …)
 
 Real example from this project:
 
-- `stg_github_commits` -> `github_commits`
+- `stg_agro_clima_diario_nasa_power` limpia la tabla cruda de clima de `tap-agro`; `stg_clima_diario_nasa` modela la vista en `raw_nasa`.
 
 ### Table of models and key columns
 
-All column documentation lives in:
-
-- `transform/models/staging/*.yml`
-- `transform/models/production/marts/*.yml`
+La documentación de columnas está en `transform/models/staging/*.yml` (y en YAML junto a cada mart cuando existan).
 
 ### Environments (dev, ci, prod)
 
@@ -247,7 +244,7 @@ If you do not pass `--target prod`, dbt uses the default target (dev).
 ### Modeling conventions
 
 - Staging always uses the `stg_` prefix.
-- Marts have no prefix (e.g. `github_commits`).
+- Los marts (cuando existan) no llevan prefijo `stg_`; hoy el proyecto se centra en staging NASA / agro.
 - Each production model has its own `.yml` file with columns and tests.
 - Use `ref()` for dependencies between models.
 
@@ -279,8 +276,8 @@ dbt build --select <model_name>
 ### Change the data source
 
 1. Edit `extraction/meltano.yml` to point to your new extractor.
-2. Update `transform/models/staging/source_github.yml` with the new dataset and tables.
-3. Rewrite the staging models to map the new columns.
+2. Update `transform/models/staging/source_tap_agro.yml` and/or `source_nasa.yml` con el dataset y tablas correctos.
+3. Reescribe los modelos `stg_*` para mapear las nuevas columnas.
 
 ## Quick repo layout
 

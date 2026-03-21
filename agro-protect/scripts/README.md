@@ -86,7 +86,7 @@ export EXPORT_GCS_BUCKET_NAME=your-exports-bucket
 export EXPORT_GCS_PREFIX=prod/exports
 
 # Option A — multiple tables/views (values = dataset.table in your project)
-export EXPORT_TABLE_MAP='{"locations":"analytics.stg_agro_locations","clima":"analytics.stg_agro_clima_diario_nasa_power"}'
+export EXPORT_TABLE_MAP='{"locations":"analytics.stg_agro_locations","weather":"analytics.stg_agro_clima_diario_nasa_power"}'
 
 # Option B — single table
 # export EXPORT_BQ_TABLE_REF=analytics.stg_agro_locations
@@ -140,11 +140,27 @@ Workflow: **`.github/workflows/export-bigquery-gcs.yml`** (`export-bigquery-gcs`
 |--------|----------|-------------|
 | `EXPORT_GOOGLE_APPLICATION_CREDENTIALS` | Yes | Export SA JSON, **base64 single line** (`base64 -i key.json \| tr -d '\n'`) |
 | `BIGQUERY_PROJECT_ID` | Yes | Same as elsewhere in the repo |
-| `EXPORT_GCS_BUCKET_NAME` | Yes | e.g. `agroprotect-exports-prod` |
+| `EXPORT_GCS_BUCKET_NAME` | Yes | **Bucket id only** (e.g. `agroprotect-exports-prod`). Do not use `gs://…` or paths — the script builds the URI. |
 | `EXPORT_TABLE_MAP` | One or the other | **One-line** JSON, e.g. `{"locations":"analytics.stg_agro_locations"}` |
 | `EXPORT_BQ_TABLE_REF` | One or the other | `dataset.table` for a single table |
 | `EXPORT_GCS_BLOB_NAME` | No | File name without `.json` (only with `EXPORT_BQ_TABLE_REF`) |
 | `EXPORT_GCS_PREFIX` | No | If the secret is unset, the script defaults to `prod/exports` |
+
+### Quick test secret (`EXPORT_TABLE_MAP`)
+
+Paste this **exact single line** as the secret value (no line breaks):
+
+```text
+{"locations":"analytics.stg_agro_locations","weather":"analytics.stg_agro_clima_diario_nasa_power"}
+```
+
+Object keys (`locations`, `weather`) become export **prefixes**: BigQuery writes **sharded** objects like `locations_000000000000.json`, `weather_000000000000.json` under your prefix (default `prod/exports/`). Small tables usually produce one shard.
+
+**Dataset name:** Values must match **BigQuery** (`dataset.table`). In this repo, dbt **prod** staging often lives in the **`stg`** dataset (`stg.stg_agro_locations`, …), not `analytics`. If the job fails with “not found”, use:
+
+```text
+{"locations":"stg.stg_agro_locations","weather":"stg.stg_agro_clima_diario_nasa_power"}
+```
 
 If you create **`EXPORT_GCS_PREFIX`** as an **empty** secret, GitHub may omit it; to force an empty prefix you can skip the secret and rely on the script default. For a custom prefix, set the secret to e.g. `prod/exports` (no trailing slash).
 

@@ -41,7 +41,7 @@ ignore_comment_lines = true
 ignore_comment_clauses = true
 
 [sqlfluff:rules:references.keywords]
-ignore_words = network,users,url,date
+ignore_words = network,users,url,date,quarter
 
 
 [sqlfluff:templater:jinja]
@@ -49,6 +49,8 @@ apply_dbt_builtins = true
 
 load_macros_from_path = transform/macros
 
+[sqlfluff:templater:jinja:context]
+this = "`_sqlfluff_project`.`_sqlfluff_dataset`.`_sqlfluff_this`"
 
 [sqlfluff:templater:jinja:macros]
 dbt_config = {% macro config() %}{% for k in kwargs %}{% endfor %}{% endmacro %}

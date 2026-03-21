@@ -1,12 +1,13 @@
 version: 2
 
-# Raw loaded by Meltano: tap-agro → target-bigquery → dataset {{ target.name }}_tap_agro
+# Raw loaded by Meltano: tap-agro → target-bigquery → dataset {env}_tap_agro (e.g. prod_tap_agro).
+# Override in CI: DBT_TAP_AGRO_DATASET=prod_tap_agro so PR builds read the same data as the pipeline.
 # Tables use Singer column `data` (STRUCT); stg_* models use * EXCEPT(data), data.*
 
 sources:
   - name: tap_agro
     description: Raw weather and dimensions (tap-meteorology / NASA POWER)
-    schema: "{{ target.name }}_tap_agro"
+    schema: "{{ env_var('DBT_TAP_AGRO_DATASET', target.name ~ '_tap_agro') }}"
     tables:
       - name: locations
         description: Location catalog synced from the tap

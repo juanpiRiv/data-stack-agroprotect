@@ -18,6 +18,10 @@ jobs:
       BIGQUERY_LOCATION: ${{ secrets.BIGQUERY_LOCATION }}
       DBT_GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-dbt-service-account.json
       GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-dbt-service-account.json
+      # Meltano schedule loads prod_tap_agro; dev target alone would look for dev_tap_agro (empty / missing).
+      DBT_TAP_AGRO_DATASET: prod_tap_agro
+      # Set true when raw_nasa.clima_diario_nasa_power_view exists in BigQuery.
+      DBT_ENABLE_RAW_NASA: 'false'
       DBT_USER: ci_pr_${{ github.event.pull_request.number }}
       CI: true
       DBT_CI_PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -71,10 +75,11 @@ jobs:
         id: changed_sql
         run: |
           git fetch origin "${{ github.base_ref }}" --depth=1
+          # --diff-filter=d: exclude deleted paths (sqlfluff cannot lint removed files)
           if command -v rg >/dev/null 2>&1; then
-            files=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" | rg '^agro-protect/transform/models/.*\.sql$' || true)
+            files=$(git diff --name-only --diff-filter=d "origin/${{ github.base_ref }}...HEAD" | rg '^agro-protect/transform/models/.*\.sql$' || true)
           else
-            files=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -E '^agro-protect/transform/models/.*\.sql$' || true)
+            files=$(git diff --name-only --diff-filter=d "origin/${{ github.base_ref }}...HEAD" | grep -E '^agro-protect/transform/models/.*\.sql$' || true)
           fi
           if [ -z "$files" ]; then
             echo "files=" >> "$GITHUB_OUTPUT"
