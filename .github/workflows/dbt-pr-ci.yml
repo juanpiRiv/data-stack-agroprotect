@@ -15,7 +15,7 @@ jobs:
     env:
       BIGQUERY_PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID || 'agro-protect-490822' }}
       BIGQUERY_DATASET_ID: ${{ secrets.BIGQUERY_DATASET_ID }}
-      BIGQUERY_LOCATION: ${{ secrets.BIGQUERY_LOCATION }}
+      BIGQUERY_LOCATION: ${{ secrets.BIGQUERY_LOCATION || 'southamerica-east1' }}
       DBT_GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-dbt-service-account.json
       GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-dbt-service-account.json
       # Raw tap-agro dataset (same name Meltano uses: {env}_tap_agro). Override with repo variable DBT_TAP_AGRO_DATASET.
@@ -57,9 +57,13 @@ jobs:
           # Trimear: secret con salto de línea pasa [ -z ] pero rompe bq ("ProjectId must be non-empty").
           BQP="$(printf '%s' "${BIGQUERY_PROJECT_ID}" | xargs)"
           BQL="$(printf '%s' "${BIGQUERY_LOCATION}" | xargs)"
-          if [ -z "${BQP}" ] || [ -z "${BQL}" ]; then
-            echo "::error::Set repository secrets BIGQUERY_PROJECT_ID and BIGQUERY_LOCATION (required, sin espacios/saltos extra)."
+          if [ -z "${BQP}" ]; then
+            echo "::error::Set repository secret BIGQUERY_PROJECT_ID (required, sin espacios/saltos extra)."
             exit 1
+          fi
+          if [ -z "${BQL}" ]; then
+            BQL="southamerica-east1"
+            echo "::notice::BIGQUERY_LOCATION vacío; usando ${BQL}."
           fi
           # Project ID de GCP: 6-30 chars, minúsculas/dígitos/guiones, empieza con letra (no uses el nombre visible ni el número de proyecto).
           if ! printf '%s' "${BQP}" | grep -qE '^[a-z][a-z0-9-]{4,28}[a-z0-9]$'; then
@@ -286,7 +290,7 @@ jobs:
     env:
       BIGQUERY_PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID || 'agro-protect-490822' }}
       BIGQUERY_DATASET_ID: ${{ secrets.BIGQUERY_DATASET_ID }}
-      BIGQUERY_LOCATION: ${{ secrets.BIGQUERY_LOCATION }}
+      BIGQUERY_LOCATION: ${{ secrets.BIGQUERY_LOCATION || 'southamerica-east1' }}
       DBT_GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-dbt-service-account.json
       GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-dbt-service-account.json
       PR_NUMBER: ${{ github.event.pull_request.number }}

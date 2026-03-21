@@ -38,13 +38,15 @@ models:
         description: Latitude coordinate of location
         tests:
           - dbt_utils.expression_is_true:
-              expression: "latitude >= -90 and latitude <= 90"
+              arguments:
+                expression: "latitude >= -90 and latitude <= 90"
 
       - name: longitude
         description: Longitude coordinate of location
         tests:
           - dbt_utils.expression_is_true:
-              expression: "longitude >= -180 and longitude <= 180"
+              arguments:
+                expression: "longitude >= -180 and longitude <= 180"
 
       # Time dimensions
       - name: date
@@ -72,7 +74,8 @@ models:
         description: Maximum temperature at 2m height (°C)
         tests:
           - dbt_utils.expression_is_true:
-              expression: "t2m_max >= -60 and t2m_max <= 60"
+              arguments:
+                expression: "t2m_max >= -60 and t2m_max <= 60"
               config:
                 where: "t2m_max is not null"
 
@@ -80,7 +83,8 @@ models:
         description: Minimum temperature at 2m height (°C)
         tests:
           - dbt_utils.expression_is_true:
-              expression: "t2m_min >= -60 and t2m_min <= 60"
+              arguments:
+                expression: "t2m_min >= -60 and t2m_min <= 60"
               config:
                 where: "t2m_min is not null"
 
@@ -100,7 +104,8 @@ models:
         description: Bias-corrected precipitation (mm/day)
         tests:
           - dbt_utils.expression_is_true:
-              expression: "precipitation_corrected >= 0 and precipitation_corrected <= 400"
+              arguments:
+                expression: "precipitation_corrected >= 0 and precipitation_corrected <= 400"
               config:
                 where: "precipitation_corrected is not null"
 
@@ -108,7 +113,8 @@ models:
         description: Relative humidity at 2m height (%)
         tests:
           - dbt_utils.expression_is_true:
-              expression: "relative_humidity_2m >= 0 and relative_humidity_2m <= 100"
+              arguments:
+                expression: "relative_humidity_2m >= 0 and relative_humidity_2m <= 100"
               config:
                 where: "relative_humidity_2m is not null"
 
@@ -125,7 +131,8 @@ models:
         description: Wind speed at 2m height (m/s)
         tests:
           - dbt_utils.expression_is_true:
-              expression: "wind_speed_2m >= 0 and wind_speed_2m <= 50"
+              arguments:
+                expression: "wind_speed_2m >= 0 and wind_speed_2m <= 50"
               config:
                 where: "wind_speed_2m is not null"
 
@@ -136,7 +143,8 @@ models:
         description: Wind direction at 2m height (degrees from north, 0-360)
         tests:
           - dbt_utils.expression_is_true:
-              expression: "wind_direction_2m >= 0 and wind_direction_2m <= 360"
+              arguments:
+                expression: "wind_direction_2m >= 0 and wind_direction_2m <= 360"
               config:
                 where: "wind_direction_2m is not null"
 

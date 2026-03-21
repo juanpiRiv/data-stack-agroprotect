@@ -108,7 +108,7 @@ Edit `.env` with your credentials. Minimal example:
 ```bash
 BIGQUERY_PROJECT_ID=agro-protect-490822
 BIGQUERY_DATASET_ID=analytics
-BIGQUERY_LOCATION=US
+BIGQUERY_LOCATION=southamerica-east1
 DBT_GOOGLE_APPLICATION_CREDENTIALS=/path/to/dbt-service-account.json
 MELTANO_GOOGLE_APPLICATION_CREDENTIALS=/path/to/meltano-service-account.json
 GOOGLE_APPLICATION_CREDENTIALS=${MELTANO_GOOGLE_APPLICATION_CREDENTIALS}
@@ -261,7 +261,7 @@ dbt build
 ```
 
 > [i] INFO: Raw data stays in the tap’s dataset; in dev models go to `SANDBOX_<DBT_USER>`.
-> [i] INFO: Creá ese dataset (y `stg` si usás `--defer`) en BigQuery en la **misma región** que `BIGQUERY_LOCATION`, p. ej. `bq mk --dataset --location=US ${BIGQUERY_PROJECT_ID}:SANDBOX_tu_usuario`. En PRs, GitHub Actions lo hace por región alineada a `prod_tap_agro`.
+> [i] INFO: Creá ese dataset (y `stg` si usás `--defer`) en BigQuery en la **misma región** que `BIGQUERY_LOCATION`, p. ej. `bq mk --dataset --location=southamerica-east1 ${BIGQUERY_PROJECT_ID}:SANDBOX_tu_usuario`. En PRs, GitHub Actions lo hace por región alineada a `prod_tap_agro`.
 > [i] INFO: If you modify models or YAML, run `dbt build` again.
 
 ### Add a new model
@@ -315,7 +315,7 @@ They assume `working-directory: agro-protect` for installs and run Meltano/dbt u
 **Export a GCS (workflow `export-bigquery-gcs`):**
 
 - `EXPORT_GOOGLE_APPLICATION_CREDENTIALS` (base64) — SA de export (BQ read + bucket write + list/sign en GCS)
-- `BIGQUERY_PROJECT_ID`; **`BIGQUERY_LOCATION`** opcional (default **US**); **`BIGQUERY_DATASET_ID`** (default **analytics**) para modo auto
+- `BIGQUERY_PROJECT_ID`; **`BIGQUERY_LOCATION`** opcional (default **southamerica-east1** en workflow/perfil); **`BIGQUERY_DATASET_ID`** (default **analytics**) para modo auto
 - `EXPORT_GCS_BUCKET_NAME` (default **`agroprotect-exports-prod`** en script y workflow)
 - **Por defecto** (sin `EXPORT_TABLE_MAP` / `EXPORT_BQ_TABLE_REF`): exporta tablas/vistas en **`stg`**, **`BIGQUERY_DATASET_ID`** y **`marts`**, NDJSON + **`export_manifest.json`** con URLs firmadas (ver `scripts/README.md`)
 - Opcional: lista manual `EXPORT_TABLE_MAP` o `EXPORT_BQ_TABLE_REF`; `EXPORT_GCS_PREFIX`, `EXPORT_BQ_DATASETS`, `EXPORT_SIGNED_URL_TTL_SEC`

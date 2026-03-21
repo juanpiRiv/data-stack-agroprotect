@@ -15,7 +15,8 @@ from google.cloud import bigquery, storage
 from google.oauth2 import service_account
 
 _DEFAULT_GCP_PROJECT = "agro-protect-490822"
-_DEFAULT_BIGQUERY_LOCATION = "US"
+# Fallback si no hay metadata ni env; este proyecto usa BQ en southamerica-east1.
+_DEFAULT_BIGQUERY_LOCATION = "southamerica-east1"
 _DEFAULT_GCS_BUCKET = "agroprotect-exports-prod"
 _BQ_SCOPES = ("https://www.googleapis.com/auth/cloud-platform",)
 # BigQuery extract no aplica a tablas externas vinculadas.
@@ -127,12 +128,19 @@ def _table_type_for_ref(client: bigquery.Client, bq_ref: bigquery.TableReference
             if item.table_id == bq_ref.table_id:
                 return (getattr(item, "table_type", None) or "TABLE").strip()
     except gcp_exceptions.NotFound as e:
+        ds = bq_ref.dataset_id
+        hint_ds = ""
+        if ds.lower() == "analytics":
+            hint_ds = (
+                "En este repo las vistas dbt en prod suelen estar en el dataset **stg**, no `analytics`. "
+                "Cambiá el mapa a `stg.{tbl}` o borrá el secret EXPORT_TABLE_MAP para modo auto. "
+            ).format(tbl=bq_ref.table_id)
         raise SystemExit(
-            f"BigQuery: proyecto o dataset no encontrado para {fq}. "
-            "Revisá el secret BIGQUERY_PROJECT_ID (debe ser el **ID** de GCP, p. ej. agro-protect-490822, no el nombre). "
-            "Si EXPORT_TABLE_MAP usa project.dataset.table, el proyecto debe existir y la SA de export tener acceso. "
-            "Para exportar solo stg/analytics sin mapa, borrá EXPORT_TABLE_MAP y EXPORT_BQ_TABLE_REF (modo auto). "
-            f"Detalle: {e}"
+            f"BigQuery: no existe el dataset `{ds}` en el proyecto `{bq_ref.project}` (tabla `{bq_ref.table_id}`). {hint_ds}"
+            "Revisá EXPORT_TABLE_MAP: valor `dataset.tabla` debe coincidir con BigQuery. "
+            "Revisá también BIGQUERY_PROJECT_ID y permisos de la SA de export. "
+            "Modo auto (recomendado): quitá EXPORT_TABLE_MAP y EXPORT_BQ_TABLE_REF de los secrets. "
+            f"Detalle API: {e}"
         ) from e
     except gcp_exceptions.GoogleAPICallError as e:
         raise SystemExit(
@@ -150,10 +158,14 @@ def _table_type_for_ref(client: bigquery.Client, bq_ref: bigquery.TableReference
 
 
 def _resolve_extract_location(client: bigquery.Client, ref: bigquery.TableReference) -> str:
-    for key in ("EXPORT_BIGQUERY_LOCATION", "BIGQUERY_LOCATION"):
-        v = (os.environ.get(key) or "").strip()
-        if v:
-            return v
+    """Región del job: primero metadata BQ (dataset/tabla); BIGQUERY_LOCATION solo si no hay metadata."""
+    try:
+        ds_ref = bigquery.DatasetReference(ref.project, ref.dataset_id)
+        ds = client.get_dataset(ds_ref)
+        if ds.location:
+            return str(ds.location)
+    except gcp_exceptions.GoogleAPICallError:
+        pass
     try:
         table = client.get_table(ref)
         loc = getattr(table, "location", None) or (getattr(table, "_properties", None) or {}).get(
@@ -163,13 +175,10 @@ def _resolve_extract_location(client: bigquery.Client, ref: bigquery.TableRefere
             return str(loc)
     except gcp_exceptions.GoogleAPICallError:
         pass
-    try:
-        ds_ref = bigquery.DatasetReference(ref.project, ref.dataset_id)
-        ds = client.get_dataset(ds_ref)
-        if ds.location:
-            return str(ds.location)
-    except gcp_exceptions.GoogleAPICallError:
-        pass
+    for key in ("EXPORT_BIGQUERY_LOCATION", "BIGQUERY_LOCATION"):
+        v = (os.environ.get(key) or "").strip()
+        if v:
+            return v
     return _DEFAULT_BIGQUERY_LOCATION
 
 
@@ -350,10 +359,14 @@ def export_auto(
     for ds_id in _datasets_for_auto_export():
         ds_ref = bigquery.DatasetReference(project, ds_id)
         try:
-            client.get_dataset(ds_ref)
+            ds_full = client.get_dataset(ds_ref)
         except gcp_exceptions.GoogleAPICallError:
             print(f"skip dataset (missing or no access): {project}.{ds_id}", file=sys.stderr)
             continue
+
+        # La región del job debe coincidir con la del dataset; BIGQUERY_LOCATION=US con stg en
+        # southamerica-east1 provoca "Dataset not found in location US".
+        ds_location = (getattr(ds_full, "location", None) or "").strip() or None
 
         for item in client.list_tables(ds_ref):
             ttype = (getattr(item, "table_type", None) or "TABLE").strip()
@@ -363,7 +376,7 @@ def export_auto(
 
             fq = f"{project}.{ds_id}.{item.table_id}"
             bq_ref = _table_ref_from_fq(fq)
-            loc = _resolve_extract_location(client, bq_ref)
+            loc = ds_location or _resolve_extract_location(client, bq_ref)
             table_key = f"{ds_id}/{item.table_id}"
             dest_uri = f"gs://{bucket}/{prefix}{table_key}_*.json"
 
@@ -371,18 +384,18 @@ def export_auto(
             gcs_objects = _blobs_for_prefix(storage_client, bucket, prefix, table_key)
             signed = _sign_blobs(storage_client, bucket, gcs_objects, credentials, ttl)
 
-            records.append(
-                {
-                    "dataset": ds_id,
-                    "table": item.table_id,
-                    "table_type": ttype,
-                    "export_method": "export_data_sql" if ttype == "VIEW" else "extract_table",
-                    "fully_qualified": fq,
-                    "gcs_objects": gcs_objects,
-                    "signed_urls": signed,
-                    "signed_url_expires_in_seconds": ttl,
-                }
-            )
+            rec: dict[str, Any] = {
+                "dataset": ds_id,
+                "table": item.table_id,
+                "table_type": ttype,
+                "export_method": "export_data_sql" if ttype == "VIEW" else "extract_table",
+                "fully_qualified": fq,
+                "bq_job_location": loc,
+                "gcs_objects": gcs_objects,
+                "signed_urls": signed,
+                "signed_url_expires_in_seconds": ttl,
+            }
+            records.append(rec)
             print(f"OK {fq} -> {dest_uri}", file=sys.stderr)
 
     manifest_path = (os.environ.get("DBT_MANIFEST_PATH") or "").strip()
@@ -423,7 +436,13 @@ def export_explicit(
         dest_uri = f"gs://{bucket}/{prefix}{base}_*.json"
 
         bq_ref = _table_ref_from_fq(fq)
-        loc = _resolve_extract_location(client, bq_ref)
+        ds_ref = bigquery.DatasetReference(bq_ref.project, bq_ref.dataset_id)
+        try:
+            ds_meta = client.get_dataset(ds_ref)
+            ds_location = (getattr(ds_meta, "location", None) or "").strip() or None
+        except gcp_exceptions.GoogleAPICallError:
+            ds_location = None
+        loc = ds_location or _resolve_extract_location(client, bq_ref)
         ttype = _table_type_for_ref(client, bq_ref)
 
         _export_relation_ndjson(client, ttype, bq_ref, dest_uri, project, loc, job_config)
@@ -437,6 +456,7 @@ def export_explicit(
                 "table_type": ttype,
                 "export_method": "export_data_sql" if ttype == "VIEW" else "extract_table",
                 "fully_qualified": fq,
+                "bq_job_location": loc,
                 "gcs_objects": gcs_objects,
                 "signed_urls": signed,
                 "signed_url_expires_in_seconds": ttl,

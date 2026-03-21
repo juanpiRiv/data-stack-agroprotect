@@ -47,7 +47,7 @@ export BUCKET=your-exports-bucket
 
 gcloud config set project "${PROJECT}"
 
-gsutil mb -l US "gs://${BUCKET}"   # adjust region to yours
+gsutil mb -l us-central1 "gs://${BUCKET}"   # bucket de export puede diferir de la región BQ (southamerica-east1)
 
 gcloud projects add-iam-policy-binding "${PROJECT}" \
   --member="serviceAccount:${SA}" \
@@ -148,7 +148,7 @@ Workflow: **`.github/workflows/export-bigquery-gcs.yml`** (`export-bigquery-gcs`
 | `EXPORT_GOOGLE_APPLICATION_CREDENTIALS` | Yes | Export SA JSON, **base64 single line** (`base64 -i key.json \| tr -d '\n'`) |
 | `DBT_GOOGLE_APPLICATION_CREDENTIALS` | No | Si existe, **dbt parse** usa esta key; si no, reutiliza la key de export (misma SA posible). |
 | `BIGQUERY_PROJECT_ID` | Yes | Same as elsewhere in the repo |
-| `BIGQUERY_LOCATION` | No | Default **`US`** (workflow y script, alineado a `.env.example`). Si tus datasets están en otra región (`southamerica-east1`, …), definí el secret o `EXPORT_BIGQUERY_LOCATION`. |
+| `BIGQUERY_LOCATION` | No | Default **`southamerica-east1`** (workflow, perfil dbt y `.env.example`). El export usa la **ubicación del dataset** en BigQuery antes que este valor; `EXPORT_BIGQUERY_LOCATION` fuerza solo si lo necesitás. |
 | `EXPORT_GCS_BUCKET_NAME` | No | Default **`agroprotect-exports-prod`**. **Bucket id only** (no `gs://`). Sobreescribí con secret/variable si usás otro bucket. |
 | `BIGQUERY_DATASET_ID` | No | Default **`analytics`** (workflow y modo auto). Debe coincidir con el `schema` de dbt **prod**. |
 | `EXPORT_TABLE_MAP` | No* | *Solo modo explícito. Si **omitís** este secret y `EXPORT_BQ_TABLE_REF`, corre **modo auto** (todos los datasets listados arriba). |

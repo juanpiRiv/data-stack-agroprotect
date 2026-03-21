@@ -44,7 +44,8 @@ jobs:
     env:
       BIGQUERY_PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID || 'agro-protect-490822' }}
       BIGQUERY_DATASET_ID: ${{ secrets.BIGQUERY_DATASET_ID || 'analytics' }}
-      BIGQUERY_LOCATION: ${{ secrets.BIGQUERY_LOCATION || 'US' }}
+      # Alineado a datasets BQ del proyecto (evita US + stg en southamerica-east1). GCS bucket puede ser us-central1.
+      BIGQUERY_LOCATION: ${{ secrets.BIGQUERY_LOCATION || 'southamerica-east1' }}
       EXPORT_GCS_BUCKET_NAME: ${{ secrets.EXPORT_GCS_BUCKET_NAME || 'agroprotect-exports-prod' }}
       EXPORT_GCS_PREFIX: ${{ secrets.EXPORT_GCS_PREFIX }}
       EXPORT_TABLE_MAP: ${{ secrets.EXPORT_TABLE_MAP }}
@@ -157,6 +158,14 @@ jobs:
           set -euo pipefail
           dbt deps
           dbt parse --target prod
+
+      - name: Hint modo explícito (EXPORT_TABLE_MAP)
+        env:
+          EXPORT_TABLE_MAP: ${{ secrets.EXPORT_TABLE_MAP }}
+        run: |
+          if [ -n "${EXPORT_TABLE_MAP:-}" ]; then
+            echo "::notice::EXPORT_TABLE_MAP definido → modo explícito. En prod las vistas suelen ser \`stg.stg_agro_*\`, no \`analytics.*\`. Para modo auto, borrá el secret EXPORT_TABLE_MAP."
+          fi
 
       - name: Export to GCS (+ manifest dbt + export_manifest)
         working-directory: agro-protect
