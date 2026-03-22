@@ -1,5 +1,10 @@
 # AgroProtect Platform
 
+**Live links**
+
+- **Product dashboard (Vercel):** [https://front-agroprotect.vercel.app/](https://front-agroprotect.vercel.app/)
+- **dbt documentation (GitHub Pages):** [https://juanpiriv.github.io/data-stack-agroprotect/#!/overview](https://juanpiriv.github.io/data-stack-agroprotect/#!/overview)
+
 AgroProtect is an agricultural intelligence platform focused on Argentina.
 
 This repository contains the data platform for AgroProtect: extraction, transformation, testing, and export workflows that turn raw weather and reference data into analytics-ready models on BigQuery.
