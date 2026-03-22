@@ -1,10 +1,12 @@
 name: data-pipeline
 
-# Single ELT flow: tap-agro (extract) → target-bigquery (load to GCP) in one `meltano run`.
+# ELT + refresh dbt prod cuando la carga es a prod_tap_agro:
+#   tap-agro (extract) → target-bigquery → luego job `dbt-refresh-prod` (`dbt build --target prod`).
 #
-# - schedule / elt_daily_yesterday: meltano config set tap-agro days_back 1 (yesterday in tap timezone; see tap-meteorology).
-# - elt_meltano_yml: yaml_window env (start_date/end_date in meltano.yml; no days_back).
-# - meltano.yml usa solo BIGQUERY_PROJECT_ID / BIGQUERY_LOCATION. El proyecto BQ para este job está fijado en el workflow (evita secret BIGQUERY_PROJECT_ID mal configurado).
+# - schedule / elt_daily_yesterday + meltano_env prod: ELT prod + dbt prod.
+# - elt_meltano_yml / dev / ci: solo ELT (sin dbt prod; fuentes distintas de prod_tap_agro).
+# - validate_only: sin ELT ni dbt.
+# - Proyecto Meltano fijo: agro-protect-490822 (meltano.yml usa BIGQUERY_PROJECT_ID / BIGQUERY_LOCATION).
 
 on:
   schedule:
@@ -35,6 +37,8 @@ jobs:
   meltano-pipeline:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    outputs:
+      refresh_dbt_prod: ${{ steps.post_elt.outputs.refresh_dbt_prod }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -135,3 +139,167 @@ jobs:
           fi
 
           meltano --environment="${MELTANO_ENV}" run tap-agro target-bigquery
+
+      - name: Señalizar refresh dbt prod
+        id: post_elt
+        if: success() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.elt_mode != 'validate_only'))
+        run: |
+          REFRESH=false
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            REFRESH=true
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ inputs.elt_mode }}" = "elt_daily_yesterday" ] && [ "${{ inputs.meltano_env }}" = "prod" ]; then
+              REFRESH=true
+            fi
+          fi
+          echo "refresh_dbt_prod=${REFRESH}" >> "$GITHUB_OUTPUT"
+          echo "::notice::refresh_dbt_prod=${REFRESH} (stg/int/marts solo si true)."
+
+  # Misma preparación BQ que dbt-cd-docs deploy; sin docs/Pages (solo build).
+  dbt-refresh-prod:
+    name: dbt build prod tras ELT prod
+    needs: meltano-pipeline
+    if: needs.meltano-pipeline.outputs.refresh_dbt_prod == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    env:
+      BIGQUERY_PROJECT_ID: agro-protect-490822
+      BIGQUERY_DATASET_ID: ${{ secrets.BIGQUERY_DATASET_ID }}
+      BIGQUERY_LOCATION: ${{ secrets.BIGQUERY_LOCATION || 'southamerica-east1' }}
+      DBT_GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-dbt-service-account.json
+      GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-dbt-service-account.json
+      DBT_USER: ${{ secrets.DBT_USER || 'ci' }}
+      DBT_RAW_NASA_DATASET: ${{ vars.DBT_RAW_NASA_DATASET }}
+      DBT_TAP_AGRO_DATASET: ${{ vars.DBT_TAP_AGRO_DATASET || 'prod_tap_agro' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: agro-protect
+        run: |
+          python -m pip install --upgrade pip uv
+          uv pip install --system -e ".[transform]"
+
+      - name: Decode GCP credentials (dbt)
+        run: |
+          printf '%s' "${{ secrets.DBT_GOOGLE_APPLICATION_CREDENTIALS }}" | base64 -d > "${DBT_GOOGLE_APPLICATION_CREDENTIALS}"
+          chmod 600 "${DBT_GOOGLE_APPLICATION_CREDENTIALS}"
+
+      - name: Normalize BIGQUERY_PROJECT_ID
+        run: |
+          set -euo pipefail
+          BQP="$(printf '%s' "${BIGQUERY_PROJECT_ID:-}" | xargs)"
+          if [ -z "${BQP}" ]; then
+            BQP="$(jq -r '.project_id // empty' "${GOOGLE_APPLICATION_CREDENTIALS}" | xargs)"
+          fi
+          if [ -z "${BQP}" ]; then
+            BQP="agro-protect-490822"
+          fi
+          echo "BIGQUERY_PROJECT_ID=${BQP}" >> "${GITHUB_ENV}"
+          echo "GOOGLE_CLOUD_PROJECT=${BQP}" >> "${GITHUB_ENV}"
+          echo "GOOGLE_CLOUD_QUOTA_PROJECT=${BQP}" >> "${GITHUB_ENV}"
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Authenticate gcloud and align BIGQUERY_PROJECT_ID
+        run: |
+          set -euo pipefail
+          gcloud auth activate-service-account --key-file="${GOOGLE_APPLICATION_CREDENTIALS}"
+          BQP="$(printf '%s' "${BIGQUERY_PROJECT_ID}" | xargs)"
+          KEY_PID="$(jq -r '.project_id // empty' "${GOOGLE_APPLICATION_CREDENTIALS}" | xargs)"
+          if bq ls --project_id="${BQP}" "${BQP}:" >/dev/null 2>&1; then
+            echo "::notice::BIGQUERY_PROJECT_ID=${BQP} OK (bq ls)."
+          elif [ -n "${KEY_PID}" ] && bq ls --project_id="${KEY_PID}" "${KEY_PID}:" >/dev/null 2>&1; then
+            echo "::warning::BIGQUERY_PROJECT_ID (${BQP}) no accesible con esta SA; usando project_id del JSON (${KEY_PID})."
+            BQP="${KEY_PID}"
+            echo "BIGQUERY_PROJECT_ID=${BQP}" >> "${GITHUB_ENV}"
+            echo "GOOGLE_CLOUD_PROJECT=${BQP}" >> "${GITHUB_ENV}"
+            echo "GOOGLE_CLOUD_QUOTA_PROJECT=${BQP}" >> "${GITHUB_ENV}"
+          else
+            echo "::error::La SA de dbt no puede ejecutar bq ls en BIGQUERY_PROJECT_ID ni en project_id de la key."
+            exit 1
+          fi
+          echo "CLOUDSDK_CORE_PROJECT=${BQP}" >> "${GITHUB_ENV}"
+
+      - name: Align BIGQUERY_LOCATION with stg or analytics + ensure stg
+        run: |
+          set -euo pipefail
+          PROJECT="$(printf '%s' "${BIGQUERY_PROJECT_ID}" | xargs)"
+          SCHEMA_MAIN="$(printf '%s' "${BIGQUERY_DATASET_ID:-analytics}" | xargs)"
+          SCHEMA_MAIN="${SCHEMA_MAIN:-analytics}"
+
+          ds_location() {
+            local ds="$1"
+            local info loc
+            info=$(bq show --format=json --project_id="${PROJECT}" "${PROJECT}:${ds}" 2>/dev/null || true)
+            info="${info#"${info%%[![:space:]]*}"}"
+            info="${info%"${info##*[![:space:]]}"}"
+            [ -z "${info}" ] && echo "" && return
+            case "${info}" in
+              \{*) ;;
+              *) echo "" && return ;;
+            esac
+            loc=$(printf '%s' "${info}" | python3 -c "import json,sys; print(json.load(sys.stdin).get('location') or '')" 2>/dev/null || true)
+            printf '%s' "${loc}"
+          }
+
+          norm_upper() { printf '%s' "$1" | tr '[:lower:]' '[:upper:]'; }
+
+          RAW_DS="$(printf '%s' "${DBT_RAW_NASA_DATASET:-}" | xargs)"
+          RAW_DS="${RAW_DS:-prod_tap_agro}"
+          TAP_DS="$(printf '%s' "${DBT_TAP_AGRO_DATASET:-prod_tap_agro}" | xargs)"
+          TAP_DS="${TAP_DS:-prod_tap_agro}"
+
+          STG_LOC="$(ds_location stg)"
+          RAW_LOC="$(ds_location "${RAW_DS}")"
+          TAP_LOC="$(ds_location "${TAP_DS}")"
+          MAIN_LOC="$(ds_location "${SCHEMA_MAIN}")"
+
+          WANT=""
+          for loc in "${STG_LOC}" "${RAW_LOC}" "${TAP_LOC}" "${MAIN_LOC}"; do
+            [ -z "${loc}" ] || [ "${loc}" = "null" ] && continue
+            if [ -z "${WANT}" ]; then
+              WANT="${loc}"
+              continue
+            fi
+            if [ "$(norm_upper "${loc}")" != "$(norm_upper "${WANT}")" ]; then
+              echo "::error::Datasets en regiones distintas (dbt-bigquery usa una sola location): stg=${STG_LOC} ${RAW_DS}=${RAW_LOC} ${TAP_DS}=${TAP_LOC} ${SCHEMA_MAIN}=${MAIN_LOC}."
+              exit 1
+            fi
+          done
+
+          CUR="$(printf '%s' "${BIGQUERY_LOCATION}" | xargs)"
+          if [ -n "${WANT}" ]; then
+            if [ "$(norm_upper "${WANT}")" != "$(norm_upper "${CUR}")" ]; then
+              echo "::warning::BIGQUERY_LOCATION=${CUR} distinto de datasets existentes (${WANT}). Ajustando."
+              echo "BIGQUERY_LOCATION=${WANT}" >> "${GITHUB_ENV}"
+            fi
+            CUR="${WANT}"
+          fi
+
+          if ! bq show --project_id="${PROJECT}" "${PROJECT}:stg" >/dev/null 2>&1; then
+            echo "Creando dataset ${PROJECT}:stg en location=${CUR}…"
+            bq --project_id="${PROJECT}" mk --dataset --location="${CUR}" "${PROJECT}:stg"
+          fi
+
+      - name: Prepare dbt profiles
+        run: |
+          cp agro-protect/transform/profiles.yml.example agro-protect/transform/profiles.yml
+
+      - name: dbt deps + build (prod)
+        working-directory: agro-protect/transform
+        env:
+          DBT_PROFILES_DIR: ${{ github.workspace }}/agro-protect/transform
+        run: |
+          set -euo pipefail
+          dbt deps
+          dbt build --target prod
