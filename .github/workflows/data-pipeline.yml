@@ -4,6 +4,7 @@ name: data-pipeline
 #
 # - schedule / elt_daily_yesterday: meltano config set tap-agro days_back 1 (yesterday in tap timezone; see tap-meteorology).
 # - elt_meltano_yml: yaml_window env (start_date/end_date in meltano.yml; no days_back).
+# - meltano.yml usa solo BIGQUERY_PROJECT_ID / BIGQUERY_LOCATION. El proyecto BQ para este job está fijado en el workflow (evita secret BIGQUERY_PROJECT_ID mal configurado).
 
 on:
   schedule:
@@ -69,19 +70,43 @@ jobs:
           printf '%s' "${{ secrets.MELTANO_GOOGLE_APPLICATION_CREDENTIALS }}" | base64 -d > "${{ github.workspace }}/gcp-meltano-service-account.json"
           chmod 600 "${{ github.workspace }}/gcp-meltano-service-account.json"
 
+      - name: Set up gcloud (Meltano → BigQuery)
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.elt_mode != 'validate_only')
+        uses: google-github-actions/setup-gcloud@v2
+
+      # Proyecto fijo (no usa secret BIGQUERY_PROJECT_ID): la SA de Meltano debe tener IAM en este proyecto.
+      - name: BigQuery env for Meltano (hardcoded project)
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.elt_mode != 'validate_only')
+        env:
+          BIGQUERY_LOCATION: ${{ secrets.BIGQUERY_LOCATION || 'southamerica-east1' }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-meltano-service-account.json
+        run: |
+          set -euo pipefail
+          BQP="agro-protect-490822"
+          BQL="$(printf '%s' "${BIGQUERY_LOCATION:-}" | xargs)"
+          if [ -z "${BQL}" ]; then
+            BQL="southamerica-east1"
+          fi
+          gcloud auth activate-service-account --key-file="${GOOGLE_APPLICATION_CREDENTIALS}"
+          if ! bq ls --project_id="${BQP}" "${BQP}:" >/dev/null 2>&1; then
+            echo "::error::bq ls falló para proyecto ${BQP}. La key en MELTANO_GOOGLE_APPLICATION_CREDENTIALS necesita acceso BigQuery en ese proyecto."
+            exit 1
+          fi
+          echo "::notice::Meltano cargará en BIGQUERY_PROJECT_ID=${BQP} (fijo en data-pipeline.yml)."
+          echo "BIGQUERY_PROJECT_ID=${BQP}" >> "${GITHUB_ENV}"
+          echo "BIGQUERY_LOCATION=${BQL}" >> "${GITHUB_ENV}"
+          echo "GOOGLE_CLOUD_PROJECT=${BQP}" >> "${GITHUB_ENV}"
+          echo "GOOGLE_CLOUD_QUOTA_PROJECT=${BQP}" >> "${GITHUB_ENV}"
+          gcloud config set project "${BQP}" --quiet
+
       - name: Extract + load → BigQuery (tap-agro | target-bigquery)
         if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.elt_mode != 'validate_only')
         working-directory: agro-protect/extraction
         env:
           TAP_AGRO_USE_OPEN_METEO: 'false'
-          BIGQUERY_PROJECT_ID: ${{ secrets.BIGQUERY_PROJECT_ID || 'agro-protect-490822' }}
-          BIGQUERY_LOCATION: ${{ secrets.BIGQUERY_LOCATION || 'southamerica-east1' }}
           MELTANO_GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-meltano-service-account.json
           GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp-meltano-service-account.json
           MELTANO_STATE_BACKEND_URI: ${{ secrets.MELTANO_STATE_BACKEND_URI }}
-          TARGET_BIGQUERY_PROJECT: ${{ secrets.TARGET_BIGQUERY_PROJECT || secrets.BIGQUERY_PROJECT_ID || 'agro-protect-490822' }}
-          TARGET_BIGQUERY_LOCATION: ${{ secrets.TARGET_BIGQUERY_LOCATION || secrets.BIGQUERY_LOCATION || 'southamerica-east1' }}
-          TARGET_BIGQUERY_CREDENTIALS_PATH: ${{ github.workspace }}/gcp-meltano-service-account.json
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" = "schedule" ]; then
